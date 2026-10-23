@@ -85,6 +85,26 @@ class AdminSettings(BaseAppSettings):
     email: str = Field(default="", alias="ADMIN_EMAIL")
 
 
+class ReminderSettings(BaseAppSettings):
+    """Telegram-напоминания. Без токена и чата бот молчит, остальное работает."""
+
+    telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: str = Field(default="", alias="TELEGRAM_CHAT_ID")
+    days_before: int = Field(default=3, ge=0, le=30, alias="REMINDER_DAYS_BEFORE")
+    # Как часто фоновый процесс проверяет сроки (он же long-polling кнопки «Оплачено»).
+    check_interval_seconds: int = Field(
+        default=60, ge=5, le=3600, alias="REMINDER_CHECK_INTERVAL_SECONDS"
+    )
+    # Кнопка «Оплачено» прямо в сообщении бота.
+    pay_button: bool = Field(default=True, alias="TELEGRAM_PAY_BUTTON")
+    # Базовый URL панели для ссылки в сообщении (необязательно).
+    panel_url: str = Field(default="", alias="PANEL_URL")
+
+    @property
+    def telegram_enabled(self) -> bool:
+        return bool(self.telegram_bot_token and self.telegram_chat_id)
+
+
 # Обязательные поля DjangoSettings/AdminSettings приходят из .env, а не из аргументов __init__.
 # mypy понимает это через плагин pydantic, Pyright — нет, поэтому игнор только для него.
 class Settings(BaseAppSettings):
@@ -92,6 +112,7 @@ class Settings(BaseAppSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     jwt: JWTSettings = Field(default_factory=JWTSettings)
     admin: AdminSettings = Field(default_factory=AdminSettings)  # pyright: ignore[reportArgumentType]
+    reminders: ReminderSettings = Field(default_factory=ReminderSettings)
 
 
 @lru_cache(maxsize=1)

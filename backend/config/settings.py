@@ -10,6 +10,8 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import sys
+
 import django_stubs_ext
 
 from .env import settings
@@ -38,6 +40,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "ninja",
     "ninja_extra",
     "ninja_jwt",
     "ninja_jwt.token_blacklist",
@@ -156,3 +159,40 @@ JWT_REFRESH_COOKIE_SECURE = (
 # Администратор из .env
 
 ADMIN_USERNAME = settings.admin.username
+
+
+# Напоминания в Telegram
+
+TELEGRAM_BOT_TOKEN = settings.reminders.telegram_bot_token
+TELEGRAM_CHAT_ID = settings.reminders.telegram_chat_id
+TELEGRAM_PAY_BUTTON = settings.reminders.pay_button
+REMINDER_DAYS_BEFORE = settings.reminders.days_before
+REMINDER_CHECK_INTERVAL_SECONDS = settings.reminders.check_interval_seconds
+PANEL_URL = settings.reminders.panel_url
+
+
+# Логи: авторизация и действия пользователей (logger "audit"), напоминания.
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "plain": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+    },
+    "loggers": {
+        "audit": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "apps": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}
+
+
+# Тесты: быстрый хешер паролей и без логов в выводе.
+
+if "test" in sys.argv[1:2]:
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+    LOGGING["loggers"] = {name: {"level": "CRITICAL"} for name in ("audit", "apps")}
+    TELEGRAM_BOT_TOKEN = ""
+    TELEGRAM_CHAT_ID = ""

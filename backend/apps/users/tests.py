@@ -170,3 +170,102 @@ class AuthApiTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["code"], "csrf_failed")
+
+
+class UsersApiTests(TestCase):
+    def setUp(self) -> None:
+        self.env_admin = User.objects.get(username=settings.ADMIN_USERNAME)
+        self.env_admin.set_password("admin-pass-1")
+        self.env_admin.save()
+        self.user = User.objects.create_user(username="anna", password="s3cret-pass")
+        self.admin_headers = self.bearer(settings.ADMIN_USERNAME, "admin-pass-1")
+        self.user_headers = self.bearer("anna", "s3cret-pass")
+
+    def bearer(self, username: str, password: str) -> dict[str, str]:
+        response = self.client.post(
+            f"{URL}/login",
+            {"username": username, "password": password},
+            content_type="application/json",
+        )
+        return {"Authorization": f"Bearer {response.json()['access']}"}
+
+    def send(self, method: str, path: str, data: Any = None, user: bool = False) -> Any:
+        headers = self.user_headers if user else self.admin_headers
+        return getattr(self.client, method)(
+            f"/api/v1/users{path}", data, content_type="application/json", headers=headers
+        )
+
+    def test_user_has_no_access(self) -> None:
+        for method, path in [("get", ""), ("post", ""), ("patch", "/1"), ("delete", "/1")]:
+            with self.subTest(method=method):
+                response = self.send(method, path, {}, user=True)
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.json()["code"], "forbidden")
+
+    def test_list_hides_secrets(self) -> None:
+        body = self.send("get", "").json()
+
+        self.assertEqual(body["count"], 2)
+        admin = body["items"][0]
+        self.assertTrue(admin["is_env_admin"])
+        self.assertEqual(admin["role"], "admin")
+        self.assertNotIn("password", admin)
+
+    def test_create_regular_user(self) -> None:
+        response = self.send(
+            "post",
+            "",
+            {"username": "petr", "password": "min8chars", "role": "admin", "first_name": "Пётр"},
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        body = response.json()
+        self.assertEqual(body["role"], "user")
+        self.assertIsNone(body["last_login"])
+        self.assertTrue(User.objects.get(username="petr").check_password("min8chars"))
+
+    def test_create_validation_and_conflict(self) -> None:
+        response = self.send("post", "", {"username": "anna", "password": "min8chars"})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["fields"], {"username": ["Логин уже занят"]})
+
+        response = self.send("post", "", {"username": "bad name", "password": "short"})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["fields"]["password"], ["Минимум 8 символов"])
+        self.assertIn("username", response.json()["fields"])
+
+    def test_patch_block_and_password_revokes_refresh(self) -> None:
+        self.client.post(
+            f"{URL}/login",
+            {"username": "anna", "password": "s3cret-pass"},
+            content_type="application/json",
+        )
+        response = self.send(
+            "patch", f"/{self.user.id}", {"first_name": "Аня", "password": "new-pass-123"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["first_name"], "Аня")
+        refreshed = self.client.post(f"{URL}/refresh", headers=XHR)
+        self.assertEqual(refreshed.status_code, 401)
+
+        response = self.send("patch", f"/{self.user.id}", {"is_active": False})
+        self.assertFalse(response.json()["is_active"])
+        self.assertEqual(self.client.get(f"{URL}/me", headers=self.user_headers).status_code, 401)
+
+    def test_env_admin_immutable(self) -> None:
+        response = self.send("patch", f"/{self.env_admin.id}", {"first_name": "X"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "env_admin_immutable")
+
+        response = self.send("delete", f"/{self.env_admin.id}")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "env_admin_immutable")
+
+    def test_delete_user(self) -> None:
+        response = self.send("delete", f"/{self.user.id}")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
+        self.assertEqual(self.client.get(f"{URL}/me", headers=self.user_headers).status_code, 401)
+        self.assertEqual(self.send("delete", f"/{self.user.id}").status_code, 404)

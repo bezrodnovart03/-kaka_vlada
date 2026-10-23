@@ -56,6 +56,13 @@ class ApiError(Exception):
         return ErrorOut(code=self.code, detail=self.detail, fields=self.fields)
 
 
+def field_error(field: str, message: str, detail: str | None = None) -> ApiError:
+    """422 с ошибкой одного поля — для проверок, которым нужна «сегодняшняя» дата или БД."""
+    return ApiError(
+        422, ErrorCode.VALIDATION_ERROR, detail or _VALIDATION_DETAIL, {field: [message]}
+    )
+
+
 # Код по умолчанию для ошибок, у которых его нет (HttpError, APIException).
 _CODE_BY_STATUS = {
     401: ErrorCode.UNAUTHORIZED,
@@ -86,6 +93,25 @@ def _field_message(error: dict[str, Any]) -> str:
             return f"Минимум {ctx.get('min_length')} символов"
         case "string_too_long":
             return f"Максимум {ctx.get('max_length')} символов"
+        case "string_pattern_mismatch":
+            return "Недопустимые символы"
+        case "value_error" if ctx.get("error"):
+            # ValueError из валидаторов схем: текст уже на русском, без префикса pydantic.
+            return str(ctx["error"])
+        case "decimal_parsing" | "decimal_type":
+            return "Введите число"
+        case "decimal_max_places":
+            return f"Не более {ctx.get('decimal_places')} знаков после точки"
+        case "decimal_max_digits" | "decimal_whole_digits":
+            return "Слишком большая сумма"
+        case "date_from_datetime_parsing" | "date_parsing" | "date_type":
+            return "Некорректная дата"
+        case "enum" | "literal_error":
+            return "Недопустимое значение"
+        case "int_parsing" | "int_type":
+            return "Введите целое число"
+        case "greater_than_equal" | "less_than_equal" | "greater_than" | "less_than":
+            return "Значение вне допустимого диапазона"
         case _:
             return str(error.get("msg", "Некорректное значение"))
 

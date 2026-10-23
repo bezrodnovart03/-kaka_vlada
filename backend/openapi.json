@@ -1,0 +1,2222 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Invoice Keeper API",
+    "version": "1.0.0",
+    "description": "Напоминания о регулярных платежах"
+  },
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "apps_users_api_login",
+        "summary": "Вход по логину и паролю",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginIn"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "apps_users_api_refresh",
+        "summary": "Новый access-токен по refresh-cookie",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "apps_users_api_me",
+        "summary": "Текущий пользователь",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "apps_users_api_logout",
+        "summary": "Выход: отзыв refresh-токена и удаление cookie",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/recurring-payments": {
+      "get": {
+        "operationId": "apps_payments_api_list_recurring_payments",
+        "summary": "Список регулярных платежей",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Currency"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "schema": {
+              "default": false,
+              "title": "Include Inactive",
+              "type": "boolean"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedRecurringPaymentOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "recurring-payments"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "apps_payments_api_create_recurring_payment",
+        "summary": "Создание регулярного платежа (админ)",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringPaymentOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "recurring-payments"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringPaymentIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "AdminJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recurring-payments/{payment_id}": {
+      "delete": {
+        "operationId": "apps_payments_api_delete_recurring_payment",
+        "summary": "Прекращение платежа и напоминаний с сохранением истории (админ)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payment_id",
+            "schema": {
+              "title": "Payment Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "recurring-payments"
+        ],
+        "security": [
+          {
+            "AdminJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payment-occurrences": {
+      "get": {
+        "operationId": "apps_payments_api_list_occurrences",
+        "summary": "Список периодов: оплаченные, неоплаченные, просроченные",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "recurring_payment_id",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Recurring Payment Id"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Currency"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unpaid",
+                    "paid",
+                    "overdue",
+                    "upcoming"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "due_from",
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due From"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "due_to",
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due To"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "ordering",
+            "schema": {
+              "default": "due_date",
+              "enum": [
+                "due_date",
+                "-due_date"
+              ],
+              "title": "Ordering",
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedPaymentOccurrenceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "payment-occurrences"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payment-occurrences/{occurrence_id}": {
+      "get": {
+        "operationId": "apps_payments_api_get_occurrence",
+        "summary": "Конкретный период",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "occurrence_id",
+            "schema": {
+              "title": "Occurrence Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOccurrenceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "payment-occurrences"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "apps_payments_api_patch_occurrence",
+        "summary": "Отметить или отменить оплату, исправить фактическую дату",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "occurrence_id",
+            "schema": {
+              "title": "Occurrence Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentOccurrenceOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "payment-occurrences"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentOccurrencePatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payments/summary": {
+      "get": {
+        "operationId": "apps_payments_api_payments_summary",
+        "summary": "Итоговые суммы по валютам за период",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date_from",
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "date_to",
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SummaryOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "summary"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "operationId": "apps_users_api_list_users",
+        "summary": "Список пользователей (админ)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedUserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "AdminJWTAuth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "apps_users_api_create_user",
+        "summary": "Создание обычного пользователя (админ)",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "AdminJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "patch": {
+        "operationId": "apps_users_api_patch_user",
+        "summary": "Изменение пользователя (админ)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPatchIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "AdminJWTAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "apps_users_api_delete_user",
+        "summary": "Удаление пользователя (админ)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "AdminJWTAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccessOut": {
+        "description": "Refresh-токен в тело не попадает — он только в HttpOnly-cookie.",
+        "properties": {
+          "access": {
+            "title": "Access",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access"
+        ],
+        "title": "AccessOut",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "unauthorized",
+          "invalid_credentials",
+          "token_invalid",
+          "forbidden",
+          "csrf_failed",
+          "env_admin_immutable",
+          "cannot_delete_self",
+          "not_found",
+          "conflict",
+          "username_taken",
+          "already_deleted",
+          "occurrence_not_paid",
+          "validation_error"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
+      "ErrorOut": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ],
+        "title": "ErrorOut",
+        "type": "object"
+      },
+      "LoginIn": {
+        "properties": {
+          "username": {
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginIn",
+        "type": "object"
+      },
+      "MeOut": {
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "is_env_admin": {
+            "title": "Is Env Admin",
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "ID"
+          },
+          "username": {
+            "description": "Обязательное поле. Не более 150 символов. Только буквы, цифры и символы @/./+/-/_.",
+            "maxLength": 150,
+            "title": "Имя Пользователя",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "maxLength": 150,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Имя"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "maxLength": 150,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Фамилия"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Адрес Электронной Почты"
+          }
+        },
+        "required": [
+          "role",
+          "is_env_admin",
+          "username"
+        ],
+        "title": "MeOut",
+        "type": "object"
+      },
+      "UserRole": {
+        "enum": [
+          "admin",
+          "user"
+        ],
+        "title": "UserRole",
+        "type": "string"
+      },
+      "Currency": {
+        "enum": [
+          "RUB",
+          "USD",
+          "EUR"
+        ],
+        "title": "Currency",
+        "type": "string"
+      },
+      "RecurringPaymentFilter": {
+        "properties": {
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "search": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Search"
+          },
+          "include_inactive": {
+            "default": false,
+            "title": "Include Inactive",
+            "type": "boolean"
+          }
+        },
+        "title": "RecurringPaymentFilter",
+        "type": "object"
+      },
+      "OccurrenceBrief": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OccurrenceStatus"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "is_overdue": {
+            "title": "Is Overdue",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "due_date",
+          "status",
+          "paid_at",
+          "is_overdue"
+        ],
+        "title": "OccurrenceBrief",
+        "type": "object"
+      },
+      "OccurrenceStatus": {
+        "enum": [
+          "unpaid",
+          "paid"
+        ],
+        "title": "OccurrenceStatus",
+        "type": "string"
+      },
+      "PaginatedRecurringPaymentOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringPaymentOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PaginatedRecurringPaymentOut",
+        "type": "object"
+      },
+      "Period": {
+        "enum": [
+          "monthly",
+          "quarterly",
+          "yearly"
+        ],
+        "title": "Period",
+        "type": "string"
+      },
+      "RecurringPaymentOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "amount": {
+            "example": "85000.00",
+            "format": "decimal",
+            "title": "Amount",
+            "type": "string"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "period": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "anchor_day": {
+            "title": "Anchor Day",
+            "type": "integer"
+          },
+          "first_due_date": {
+            "format": "date",
+            "title": "First Due Date",
+            "type": "string"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/UserBrief"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "next_occurrence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OccurrenceBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overdue_count": {
+            "title": "Overdue Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "amount",
+          "currency",
+          "period",
+          "anchor_day",
+          "first_due_date",
+          "comment",
+          "is_active",
+          "deleted_at",
+          "created_by",
+          "created_at",
+          "next_occurrence",
+          "overdue_count"
+        ],
+        "title": "RecurringPaymentOut",
+        "type": "object"
+      },
+      "UserBrief": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username"
+        ],
+        "title": "UserBrief",
+        "type": "object"
+      },
+      "RecurringPaymentIn": {
+        "properties": {
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "examples": [
+              "85000.00"
+            ],
+            "title": "Amount"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "first_due_date": {
+            "format": "date",
+            "title": "First Due Date",
+            "type": "string"
+          },
+          "period": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Period"
+              }
+            ],
+            "default": "monthly"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          }
+        },
+        "required": [
+          "title",
+          "amount",
+          "currency",
+          "first_due_date"
+        ],
+        "title": "RecurringPaymentIn",
+        "type": "object"
+      },
+      "OccurrenceFilter": {
+        "properties": {
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "recurring_payment_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Payment Id"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unpaid",
+                  "paid",
+                  "overdue",
+                  "upcoming"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "due_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due From"
+          },
+          "due_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due To"
+          },
+          "ordering": {
+            "default": "due_date",
+            "enum": [
+              "due_date",
+              "-due_date"
+            ],
+            "title": "Ordering",
+            "type": "string"
+          }
+        },
+        "title": "OccurrenceFilter",
+        "type": "object"
+      },
+      "PaginatedPaymentOccurrenceOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentOccurrenceOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PaginatedPaymentOccurrenceOut",
+        "type": "object"
+      },
+      "PaymentOccurrenceOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "recurring_payment": {
+            "$ref": "#/components/schemas/RecurringPaymentBrief"
+          },
+          "amount": {
+            "example": "85000.00",
+            "format": "decimal",
+            "title": "Amount",
+            "type": "string"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "due_date": {
+            "format": "date",
+            "title": "Due Date",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OccurrenceStatus"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "is_overdue": {
+            "title": "Is Overdue",
+            "type": "boolean"
+          },
+          "overdue_days": {
+            "title": "Overdue Days",
+            "type": "integer"
+          },
+          "marked_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "marked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marked At"
+          },
+          "reminder_sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reminder Sent At"
+          }
+        },
+        "required": [
+          "id",
+          "recurring_payment",
+          "amount",
+          "currency",
+          "due_date",
+          "status",
+          "paid_at",
+          "is_overdue",
+          "overdue_days",
+          "marked_by",
+          "marked_at",
+          "reminder_sent_at"
+        ],
+        "title": "PaymentOccurrenceOut",
+        "type": "object"
+      },
+      "RecurringPaymentBrief": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "is_active"
+        ],
+        "title": "RecurringPaymentBrief",
+        "type": "object"
+      },
+      "PaymentOccurrencePatchIn": {
+        "description": "Один из вариантов: `{status: paid[, paid_at]}`, `{status: unpaid}`, `{paid_at}`.\nСочетания проверяет эндпоинт: для них нужна «сегодняшняя» дата и состояние периода.",
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OccurrenceStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          }
+        },
+        "title": "PaymentOccurrencePatchIn",
+        "type": "object"
+      },
+      "SummaryQuery": {
+        "properties": {
+          "date_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date From"
+          },
+          "date_to": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date To"
+          }
+        },
+        "title": "SummaryQuery",
+        "type": "object"
+      },
+      "CurrencyTotalsOut": {
+        "properties": {
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "planned": {
+            "example": "85000.00",
+            "format": "decimal",
+            "title": "Planned",
+            "type": "string"
+          },
+          "paid": {
+            "example": "85000.00",
+            "format": "decimal",
+            "title": "Paid",
+            "type": "string"
+          },
+          "unpaid": {
+            "example": "85000.00",
+            "format": "decimal",
+            "title": "Unpaid",
+            "type": "string"
+          },
+          "overdue": {
+            "example": "85000.00",
+            "format": "decimal",
+            "title": "Overdue",
+            "type": "string"
+          },
+          "count_planned": {
+            "title": "Count Planned",
+            "type": "integer"
+          },
+          "count_paid": {
+            "title": "Count Paid",
+            "type": "integer"
+          },
+          "count_overdue": {
+            "title": "Count Overdue",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "planned",
+          "paid",
+          "unpaid",
+          "overdue",
+          "count_planned",
+          "count_paid",
+          "count_overdue"
+        ],
+        "title": "CurrencyTotalsOut",
+        "type": "object"
+      },
+      "SummaryOut": {
+        "properties": {
+          "date_from": {
+            "format": "date",
+            "title": "Date From",
+            "type": "string"
+          },
+          "date_to": {
+            "format": "date",
+            "title": "Date To",
+            "type": "string"
+          },
+          "today": {
+            "format": "date",
+            "title": "Today",
+            "type": "string"
+          },
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyTotalsOut"
+            },
+            "title": "Totals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to",
+          "today",
+          "totals"
+        ],
+        "title": "SummaryOut",
+        "type": "object"
+      },
+      "PageQuery": {
+        "properties": {
+          "page": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "default": 50,
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Page Size",
+            "type": "integer"
+          }
+        },
+        "title": "PageQuery",
+        "type": "object"
+      },
+      "PaginatedUserOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "count"
+        ],
+        "title": "PaginatedUserOut",
+        "type": "object"
+      },
+      "UserOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "title": "Last Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "is_env_admin": {
+            "title": "Is Env Admin",
+            "type": "boolean"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_login": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login"
+          },
+          "date_joined": {
+            "format": "date-time",
+            "title": "Date Joined",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "first_name",
+          "last_name",
+          "email",
+          "role",
+          "is_env_admin",
+          "is_active",
+          "last_login",
+          "date_joined"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "UserCreateIn": {
+        "properties": {
+          "username": {
+            "maxLength": 150,
+            "minLength": 1,
+            "pattern": "^[\\w.@+-]+$",
+            "title": "Username",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "email": {
+            "default": "",
+            "maxLength": 254,
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "default": "",
+            "maxLength": 150,
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "default": "",
+            "maxLength": 150,
+            "title": "Last Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "UserCreateIn",
+        "type": "object"
+      },
+      "UserPatchIn": {
+        "properties": {
+          "username": {
+            "anyOf": [
+              {
+                "maxLength": 150,
+                "minLength": 1,
+                "pattern": "^[\\w.@+-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 254,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "maxLength": 150,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "maxLength": 150,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "title": "UserPatchIn",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "UserJWTAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "AdminJWTAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "servers": []
+}

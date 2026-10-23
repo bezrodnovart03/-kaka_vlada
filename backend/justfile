@@ -17,6 +17,17 @@ run:
 shell:
     uv run manage.py shell
 
+# Telegram-напоминания (фоновый процесс).
+reminders:
+    uv run manage.py run_reminders
+
+# Тестовые данные относительно сегодняшней даты.
+seed:
+    uv run manage.py seed_demo --reset
+
+test:
+    uv run manage.py test
+
 # --- Migrations ---
 
 migrate:
@@ -45,7 +56,7 @@ fmt-check:
 typecheck:
     uv run mypy .
 
-check: lint fmt-check typecheck
+check: lint fmt-check typecheck test
     uv run manage.py check
     uv run manage.py makemigrations --check --dry-run
 
