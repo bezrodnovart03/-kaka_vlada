@@ -1,1 +1,172 @@
-# Create your tests here.
+from typing import Any
+
+from django.conf import settings
+from django.test import TestCase
+
+from .models import User, UserRole
+
+URL = "/api/v1/auth"
+XHR = {"X-Requested-With": "XMLHttpRequest"}
+COOKIE = settings.JWT_REFRESH_COOKIE_NAME
+
+
+class AuthApiTests(TestCase):
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(
+            username="anna", password="s3cret-pass", first_name="Анна"
+        )
+
+    def login(self, password: str = "s3cret-pass") -> Any:
+        return self.client.post(
+            f"{URL}/login",
+            {"username": "anna", "password": password},
+            content_type="application/json",
+        )
+
+    def bearer(self, access: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {access}"}
+
+    def test_login_sets_http_only_cookie_and_returns_only_access(self) -> None:
+        response = self.login()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.json()), {"access"})
+        cookie = response.cookies[COOKIE]
+        self.assertTrue(cookie["httponly"])
+        self.assertEqual(cookie["samesite"], "Strict")
+        self.assertEqual(cookie["path"], settings.JWT_REFRESH_COOKIE_PATH)
+
+    def test_login_wrong_password(self) -> None:
+        response = self.login(password="wrong")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.json(),
+            {
+                "code": "invalid_credentials",
+                "detail": "Неверный логин или пароль",
+                "fields": None,
+            },
+        )
+
+    def test_login_validation_error_format(self) -> None:
+        response = self.client.post(
+            f"{URL}/login", {"username": ""}, content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["code"], "validation_error")
+        self.assertEqual(body["fields"]["username"], ["Обязательное поле"])
+        self.assertEqual(body["fields"]["password"], ["Обязательное поле"])
+
+    def test_me_returns_contract_fields(self) -> None:
+        access = self.login().json()["access"]
+
+        response = self.client.get(f"{URL}/me", headers=self.bearer(access))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "id": self.user.id,
+                "username": "anna",
+                "first_name": "Анна",
+                "last_name": "",
+                "email": "",
+                "role": UserRole.USER.value,
+                "is_env_admin": False,
+            },
+        )
+
+    def test_env_admin_is_synced_with_admin_role(self) -> None:
+        # Создаётся sync_env_admin на post_migrate тестовой БД.
+        admin = User.objects.get(username=settings.ADMIN_USERNAME)
+
+        self.assertTrue(admin.is_env_admin)
+        self.assertEqual(admin.role, "admin")
+        self.assertFalse(self.user.is_env_admin)
+
+    def test_protected_without_token(self) -> None:
+        response = self.client.get(f"{URL}/me")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["code"], "unauthorized")
+
+    def test_protected_with_garbage_token(self) -> None:
+        response = self.client.get(f"{URL}/me", headers=self.bearer("garbage"))
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            response.json(),
+            {"code": "unauthorized", "detail": "Требуется вход", "fields": None},
+        )
+
+    def test_inactive_user_access_rejected(self) -> None:
+        access = self.login().json()["access"]
+        User.objects.filter(pk=self.user.pk).update(is_active=False)
+
+        response = self.client.get(f"{URL}/me", headers=self.bearer(access))
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["code"], "unauthorized")
+
+    def test_refresh_rotates_cookie(self) -> None:
+        self.login()
+        old_refresh = self.client.cookies[COOKIE].value
+
+        response = self.client.post(f"{URL}/refresh", headers=XHR)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("access", response.json())
+        self.assertNotEqual(response.cookies[COOKIE].value, old_refresh)
+
+        # Старый refresh отозван.
+        self.client.cookies[COOKIE] = old_refresh
+        reused = self.client.post(f"{URL}/refresh", headers=XHR)
+        self.assertEqual(reused.status_code, 401)
+        self.assertEqual(reused.json()["code"], "token_invalid")
+        self.assertEqual(reused.cookies[COOKIE].value, "")
+
+    def test_refresh_requires_xhr_header(self) -> None:
+        self.login()
+
+        response = self.client.post(f"{URL}/refresh")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "csrf_failed")
+
+    def test_refresh_without_cookie(self) -> None:
+        response = self.client.post(f"{URL}/refresh", headers=XHR)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["code"], "token_invalid")
+
+    def test_refresh_inactive_user(self) -> None:
+        self.login()
+        User.objects.filter(pk=self.user.pk).update(is_active=False)
+
+        response = self.client.post(f"{URL}/refresh", headers=XHR)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["code"], "token_invalid")
+
+    def test_logout_revokes_refresh_and_deletes_cookie(self) -> None:
+        self.login()
+        refresh = self.client.cookies[COOKIE].value
+
+        response = self.client.post(f"{URL}/logout", headers=XHR)
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.cookies[COOKIE].value, "")
+        self.client.cookies[COOKIE] = refresh
+        self.assertEqual(self.client.post(f"{URL}/refresh", headers=XHR).status_code, 401)
+
+    def test_logout_is_idempotent(self) -> None:
+        self.assertEqual(self.client.post(f"{URL}/logout", headers=XHR).status_code, 204)
+
+    def test_logout_requires_xhr_header(self) -> None:
+        response = self.client.post(f"{URL}/logout")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["code"], "csrf_failed")

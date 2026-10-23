@@ -62,6 +62,8 @@ class JWTSettings(BaseAppSettings):
         default=30, alias="JWT_ACCESS_TOKEN_LIFETIME_MINUTES"
     )
     refresh_token_lifetime_days: int = Field(default=7, alias="JWT_REFRESH_TOKEN_LIFETIME_DAYS")
+    # None — по DEBUG: в dev без Secure (http://localhost), в проде с Secure.
+    refresh_cookie_secure: bool | None = Field(default=None, alias="JWT_REFRESH_COOKIE_SECURE")
 
     @property
     def access_token_lifetime(self) -> timedelta:

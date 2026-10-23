@@ -1,0 +1,143 @@
+"""
+Единый формат ошибок API (`ErrorOut`, см. docs/API.md §2).
+
+Все 4xx — включая 422 от ninja и 401 от JWTAuth — приводятся к виду
+`{"code": ..., "detail": ..., "fields": ...}`.
+"""
+
+from enum import StrEnum
+from typing import Any
+
+from django.http import Http404, HttpRequest, HttpResponse
+from ninja import NinjaAPI, Schema
+from ninja.errors import AuthenticationError, AuthorizationError, HttpError, ValidationError
+from ninja_extra.exceptions import APIException
+
+
+class ErrorCode(StrEnum):
+    UNAUTHORIZED = "unauthorized"
+    INVALID_CREDENTIALS = "invalid_credentials"
+    TOKEN_INVALID = "token_invalid"
+    FORBIDDEN = "forbidden"
+    CSRF_FAILED = "csrf_failed"
+    ENV_ADMIN_IMMUTABLE = "env_admin_immutable"
+    CANNOT_DELETE_SELF = "cannot_delete_self"
+    NOT_FOUND = "not_found"
+    CONFLICT = "conflict"
+    USERNAME_TAKEN = "username_taken"
+    ALREADY_DELETED = "already_deleted"
+    OCCURRENCE_NOT_PAID = "occurrence_not_paid"
+    VALIDATION_ERROR = "validation_error"
+
+
+class ErrorOut(Schema):
+    code: ErrorCode
+    detail: str
+    fields: dict[str, list[str]] | None = None
+
+
+class ApiError(Exception):
+    """Бизнес-ошибка, которую обработчик превращает в `ErrorOut`."""
+
+    def __init__(
+        self,
+        status: int,
+        code: ErrorCode,
+        detail: str,
+        fields: dict[str, list[str]] | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.status = status
+        self.code = code
+        self.detail = detail
+        self.fields = fields
+
+    def to_schema(self) -> ErrorOut:
+        return ErrorOut(code=self.code, detail=self.detail, fields=self.fields)
+
+
+# Код по умолчанию для ошибок, у которых его нет (HttpError, APIException).
+_CODE_BY_STATUS = {
+    401: ErrorCode.UNAUTHORIZED,
+    403: ErrorCode.FORBIDDEN,
+    404: ErrorCode.NOT_FOUND,
+    409: ErrorCode.CONFLICT,
+}
+
+_UNAUTHORIZED_DETAIL = "Требуется вход"
+_FORBIDDEN_DETAIL = "Недостаточно прав"
+_VALIDATION_DETAIL = "Проверьте поля формы"
+
+
+def _field_key(loc: tuple[Any, ...]) -> str:
+    # loc от ninja: ("body", "<имя параметра>", "field", ...) или ("query", "field", ...).
+    parts = loc[2:] if loc and loc[0] == "body" else loc[1:]
+    return ".".join(str(p) for p in parts) or str(loc[0] if loc else "body")
+
+
+def _field_message(error: dict[str, Any]) -> str:
+    ctx = error.get("ctx") or {}
+    match error.get("type"):
+        case "missing":
+            return "Обязательное поле"
+        case "string_too_short" if ctx.get("min_length") == 1:
+            return "Обязательное поле"
+        case "string_too_short":
+            return f"Минимум {ctx.get('min_length')} символов"
+        case "string_too_long":
+            return f"Максимум {ctx.get('max_length')} символов"
+        case _:
+            return str(error.get("msg", "Некорректное значение"))
+
+
+def _validation_fields(errors: list[dict[str, Any]]) -> dict[str, list[str]]:
+    fields: dict[str, list[str]] = {}
+    for error in errors:
+        fields.setdefault(_field_key(tuple(error.get("loc", ()))), []).append(_field_message(error))
+    return fields
+
+
+def register_exception_handlers(api: NinjaAPI) -> None:
+    def respond(request: HttpRequest, status: int, code: ErrorCode, detail: str) -> HttpResponse:
+        return api.create_response(request, ErrorOut(code=code, detail=detail), status=status)
+
+    def respond_by_status(request: HttpRequest, status: int, fallback: str) -> HttpResponse:
+        code = _CODE_BY_STATUS.get(status, ErrorCode.VALIDATION_ERROR)
+        detail = {401: _UNAUTHORIZED_DETAIL, 403: _FORBIDDEN_DETAIL}.get(status, fallback)
+        return respond(request, status, code, detail)
+
+    @api.exception_handler(ApiError)
+    def on_api_error(request: HttpRequest, exc: ApiError) -> HttpResponse:
+        return api.create_response(request, exc.to_schema(), status=exc.status)
+
+    @api.exception_handler(ValidationError)
+    def on_validation(request: HttpRequest, exc: ValidationError) -> HttpResponse:
+        error = ErrorOut(
+            code=ErrorCode.VALIDATION_ERROR,
+            detail=_VALIDATION_DETAIL,
+            fields=_validation_fields(list(exc.errors)),
+        )
+        return api.create_response(request, error, status=422)
+
+    @api.exception_handler(AuthenticationError)
+    def on_authentication(request: HttpRequest, exc: AuthenticationError) -> HttpResponse:
+        return respond(request, 401, ErrorCode.UNAUTHORIZED, _UNAUTHORIZED_DETAIL)
+
+    @api.exception_handler(AuthorizationError)
+    def on_authorization(request: HttpRequest, exc: AuthorizationError) -> HttpResponse:
+        return respond(request, 403, ErrorCode.FORBIDDEN, _FORBIDDEN_DETAIL)
+
+    @api.exception_handler(HttpError)
+    def on_http_error(request: HttpRequest, exc: HttpError) -> HttpResponse:
+        return respond_by_status(request, exc.status_code, str(exc))
+
+    @api.exception_handler(Http404)
+    def on_404(request: HttpRequest, exc: Http404) -> HttpResponse:
+        return respond(request, 404, ErrorCode.NOT_FOUND, "Не найдено")
+
+    # Ошибки ninja_extra/ninja_jwt: AuthenticationFailed, InvalidToken из JWTAuth и т.п.
+    # Их текст (на английском, иногда dict) наружу не отдаём.
+    # Регистрация перекрывает обработчик, который NinjaExtraAPI ставит в __init__.
+    @api.exception_handler(APIException)
+    def on_extra_api_exception(request: HttpRequest, exc: APIException) -> HttpResponse:
+        return respond_by_status(request, exc.status_code, str(exc.detail))

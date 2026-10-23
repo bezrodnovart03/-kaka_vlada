@@ -71,6 +71,7 @@ cp backend/.env.example backend/.env
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` | Подключение к сетевой БД | — |
 | `JWT_ACCESS_TOKEN_LIFETIME_MINUTES` | Время жизни access-токена | `30` |
 | `JWT_REFRESH_TOKEN_LIFETIME_DAYS` | Время жизни refresh-токена | `7` |
+| `JWT_REFRESH_COOKIE_SECURE` | Флаг `Secure` у refresh-cookie (по умолчанию `not DEBUG`) | `false` |
 | `ADMIN_USERNAME` | Логин администратора | `admin` |
 | `ADMIN_PASSWORD` | Пароль администратора | `change-me` |
 | `ADMIN_EMAIL` | Email администратора | — |
@@ -141,12 +142,12 @@ just setup
 
 | Метод | Эндпоинт | Назначение | Доступ |
 |---|---|---|---|
-| POST | `/auth/login` | Вход по логину и паролю, возвращает пару JWT `access` / `refresh` | все |
-| POST | `/auth/refresh` | Новая пара токенов по `refresh` (старый refresh отзывается) | все |
+| POST | `/auth/login` | Вход по логину и паролю: `access` в теле, `refresh` в HttpOnly-cookie | все |
+| POST | `/auth/refresh` | Новый `access` по refresh-cookie (cookie ротируется, старый refresh отзывается) | все |
 | GET | `/auth/me` | Текущий пользователь | авторизованные |
-| POST | `/auth/logout` | Завершение сессии: отзыв `refresh`-токена | авторизованные |
+| POST | `/auth/logout` | Выход: отзыв refresh-токена и удаление cookie | все |
 
-Авторизация через [django-ninja-jwt](https://github.com/eadwinCode/django-ninja-jwt): заголовок `Authorization: Bearer <access>`.
+Авторизация через [django-ninja-jwt](https://github.com/eadwinCode/django-ninja-jwt): заголовок `Authorization: Bearer <access>`, refresh-токен — в HttpOnly-cookie. Полный контракт — [docs/API.md](docs/API.md).
 
 ### Регулярные платежи и оплаты
 

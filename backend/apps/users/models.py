@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -5,8 +6,9 @@ from simple_history.models import HistoricalRecords
 
 
 class UserRole(models.TextChoices):
-    ADMIN = "AD", _("Администратор")
-    USER = "US", _("Пользователь")
+    # Значения совпадают с `Role` в API-контракте — без маппинга.
+    ADMIN = "admin", _("Администратор")
+    USER = "user", _("Пользователь")
 
 
 class User(AbstractUser):
@@ -15,7 +17,7 @@ class User(AbstractUser):
 
     role = models.CharField(
         _("роль"),
-        max_length=2,
+        max_length=16,
         choices=UserRole.choices,
         default=UserRole.USER,
     )
@@ -36,3 +38,8 @@ class User(AbstractUser):
     @property
     def is_admin(self) -> bool:
         return self.role == UserRole.ADMIN
+
+    @property
+    def is_env_admin(self) -> bool:
+        """Администратор из .env: через API его нельзя изменить или удалить."""
+        return self.username == settings.ADMIN_USERNAME

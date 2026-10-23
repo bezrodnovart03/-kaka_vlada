@@ -141,3 +141,18 @@ NINJA_JWT = {
     "UPDATE_LAST_LOGIN": True,
     "SIGNING_KEY": SECRET_KEY,
 }
+
+# Refresh-токен живёт только в HttpOnly-cookie (docs/API.md §1, §3).
+# Path совпадает с префиксом auth-роутера: на остальные эндпоинты cookie не уходит.
+JWT_REFRESH_COOKIE_NAME = "refresh_token"
+JWT_REFRESH_COOKIE_PATH = "/api/v1/auth/"
+JWT_REFRESH_COOKIE_SECURE = (
+    settings.jwt.refresh_cookie_secure
+    if settings.jwt.refresh_cookie_secure is not None
+    else not DEBUG
+)
+
+
+# Администратор из .env
+
+ADMIN_USERNAME = settings.admin.username

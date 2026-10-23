@@ -1,25 +1,24 @@
 from ninja import ModelSchema, Schema
+from pydantic import Field
 
-from .models import User
+from .models import User, UserRole
 
 
 class LoginIn(Schema):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=150)
+    password: str = Field(min_length=1, max_length=128)
 
 
-class RefreshIn(Schema):
-    refresh: str
+class AccessOut(Schema):
+    """Refresh-токен в тело не попадает — он только в HttpOnly-cookie."""
 
-
-class TokenPairOut(Schema):
     access: str
-    refresh: str
 
 
-class UserOut(ModelSchema):
-    is_admin: bool
+class MeOut(ModelSchema):
+    role: UserRole
+    is_env_admin: bool
 
     class Meta:
         model = User
-        fields = ["id", "username", "first_name", "last_name", "email", "role"]
+        fields = ["id", "username", "first_name", "last_name", "email"]
