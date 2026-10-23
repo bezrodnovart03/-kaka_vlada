@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q, QuerySet
+from django.db.models import Count, F, Prefetch, Q, QuerySet
 from django.utils import timezone
 
 from apps.core.errors import ApiError, ErrorCode
@@ -78,6 +78,8 @@ def payments_queryset(today: date) -> QuerySet[RecurringPayment]:
             )
         )
         .prefetch_related(Prefetch("occurrences", queryset=unpaid, to_attr="unpaid_occurrences"))
+        # Meta.ordering не применяется к запросам с GROUP BY — задаём явно.
+        .order_by(F("deleted_at").asc(nulls_first=True), "search_title", "id")
     )
 
 

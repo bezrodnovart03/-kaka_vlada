@@ -1,7 +1,7 @@
 # Invoice Keeper — API-контракт (back ↔ front)
 
 Источник: спецификация «Invoice Keeper — спецификация DTO и ERD» от 2026-10-23. Авторизация переведена с сессий Django на JWT (access в памяти, refresh в HttpOnly-cookie) — 2026-10-24.
-Бэкенд — django-ninja, фронт — React SPA. Источник правды — Pydantic-схемы; TS-типы генерируются из OpenAPI (`openapi-typescript`) в `frontend/src/api/types.ts`.
+Бэкенд — django-ninja, фронт — React SPA. Источник правды — Pydantic-схемы; TS-типы — `frontend/src/api/types.ts` (копия раздела 9).
 
 Во всех примерах «сегодня» = `2026-10-23`, `TIME_ZONE = Europe/Moscow`.
 
@@ -27,7 +27,7 @@
 |---|---|
 | Базовый URL | `/api/v1` |
 | Swagger | `GET /api/v1/docs` |
-| OpenAPI | `GET /api/v1/openapi.json` (копия в репо — `openapi.yml`) |
+| OpenAPI | `GET /api/v1/openapi.json` (копия в репо — `backend/openapi.json`) |
 | Формат | `Content-Type: application/json; charset=utf-8` |
 | Авторизация | JWT ([django-ninja-jwt](https://github.com/eadwinCode/django-ninja-jwt)): заголовок `Authorization: Bearer <access>` во всех запросах, кроме `auth/login`, `auth/refresh`, `auth/logout` и `docs` |
 | Токены | `access` — 30 мин, `refresh` — 7 дней (`JWT_ACCESS_TOKEN_LIFETIME_MINUTES`, `JWT_REFRESH_TOKEN_LIFETIME_DAYS`). Refresh одноразовый: при обновлении старый отзывается (ротация + blacklist) |
