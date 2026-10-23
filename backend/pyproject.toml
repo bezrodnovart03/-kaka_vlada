@@ -7,5 +7,50 @@ requires-python = ">=3.14"
 dependencies = [
     "django>=6.0,<6.1",
     "django-ninja>=1.7.1",
+    "django-ninja-jwt>=5.4.5",
     "django-simple-history>=3.13.0",
+    "django-stubs-ext>=6.1.2",
+    "pydantic-settings>=2.16.1",
 ]
+
+[dependency-groups]
+dev = [
+    "django-stubs[compatible-mypy]>=6.1.2",
+    "mypy>=2.4.0",
+    "pre-commit>=4.7.0",
+    "ruff>=0.17.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "DJ"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+plugins = ["mypy_django_plugin.main", "pydantic.mypy"]
+exclude = ["/migrations/"]
+
+[[tool.mypy.overrides]]
+# У django-simple-history нет py.typed и stubs.
+module = ["simple_history.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["*.migrations.*"]
+ignore_errors = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true

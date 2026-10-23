@@ -30,7 +30,7 @@
 
 | Часть | Технологии |
 |---|---|
-| Backend | Python 3.14, Django 6.0, django-ninja (REST API + OpenAPI/Swagger), django-simple-history |
+| Backend | Python 3.14, Django 6.0, django-ninja (REST API + OpenAPI/Swagger), django-ninja-jwt, django-simple-history, pydantic-settings |
 | Frontend | React |
 | Бот | Telegram Bot API |
 | Пакеты (backend) | [uv](https://docs.astral.sh/uv/) |
@@ -62,12 +62,18 @@ cp backend/.env.example backend/.env
 
 | Переменная | Описание | Пример |
 |---|---|---|
-| `DJANGO_SECRET_KEY` | Секретный ключ Django | `change-me` |
-| `DJANGO_DEBUG` | Режим отладки | `True` |
-| `DJANGO_ALLOWED_HOSTS` | Разрешённые хосты | `localhost,127.0.0.1` |
+| `SECRET_KEY` | Секретный ключ Django и подпись JWT (не короче 32 символов) | `uv run python -c "from django.core.management.utils import get_random_secret_key as g; print(g())"` |
+| `DEBUG` | Режим отладки | `True` |
+| `ALLOWED_HOSTS` | Разрешённые хосты (JSON-список) | `["localhost","127.0.0.1"]` |
 | `TIME_ZONE` | Единый часовой пояс системы | `Europe/Moscow` |
+| `DB_ENGINE` | Движок БД | `django.db.backends.sqlite3` |
+| `DB_NAME` | Имя БД (для SQLite — файл в `backend/`) | `db.sqlite3` |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` | Подключение к сетевой БД | — |
+| `JWT_ACCESS_TOKEN_LIFETIME_MINUTES` | Время жизни access-токена | `30` |
+| `JWT_REFRESH_TOKEN_LIFETIME_DAYS` | Время жизни refresh-токена | `7` |
 | `ADMIN_USERNAME` | Логин администратора | `admin` |
-| `ADMIN_PASSWORD` | Пароль администратора | `admin` |
+| `ADMIN_PASSWORD` | Пароль администратора | `change-me` |
+| `ADMIN_EMAIL` | Email администратора | — |
 | `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота | `123456:ABC...` |
 | `TELEGRAM_CHAT_ID` | Чат для напоминаний | `-1001234567890` |
 | `REMINDER_DAYS_BEFORE` | За сколько дней напоминать | `3` |
@@ -86,7 +92,7 @@ uv run python manage.py runserver
 
 API будет доступно на http://localhost:8000/api/v1/, Swagger — на http://localhost:8000/api/v1/docs.
 
-Учётная запись администратора создаётся или обновляется из `ADMIN_USERNAME` / `ADMIN_PASSWORD` при запуске.
+Учётная запись администратора создаётся или обновляется из `ADMIN_USERNAME` / `ADMIN_PASSWORD` после каждого `migrate`. Под ней же можно войти в Django-админку: http://localhost:8000/admin/.
 
 ### 3. Тестовые данные
 
@@ -115,6 +121,17 @@ npm run dev
 
 Панель откроется на http://localhost:5173.
 
+## Разработка
+
+Частые команды собраны в [`backend/justfile`](backend/justfile) (нужен [just](https://github.com/casey/just)), список — `just --list`:
+
+```bash
+cd backend
+just setup
+```
+
+`just setup` ставит все зависимости, включая dev-группу, и pre-commit-хуки. Перед коммитом [pre-commit](.pre-commit-config.yaml) прогоняет ruff (линтер и форматтер) и базовые проверки файлов. Вручную: `just check` (ruff, `manage.py check`, проверка миграций) и `just pre-commit`.
+
 ## API
 
 Все эндпоинты используют префикс `/api/v1`.
@@ -124,9 +141,12 @@ npm run dev
 
 | Метод | Эндпоинт | Назначение | Доступ |
 |---|---|---|---|
-| POST | `/auth/login` | Вход по логину и паролю | все |
+| POST | `/auth/login` | Вход по логину и паролю, возвращает пару JWT `access` / `refresh` | все |
+| POST | `/auth/refresh` | Новая пара токенов по `refresh` (старый refresh отзывается) | все |
 | GET | `/auth/me` | Текущий пользователь | авторизованные |
-| POST | `/auth/logout` | Завершение сессии | авторизованные |
+| POST | `/auth/logout` | Завершение сессии: отзыв `refresh`-токена | авторизованные |
+
+Авторизация через [django-ninja-jwt](https://github.com/eadwinCode/django-ninja-jwt): заголовок `Authorization: Bearer <access>`.
 
 ### Регулярные платежи и оплаты
 

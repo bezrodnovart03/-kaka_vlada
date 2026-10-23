@@ -1,0 +1,89 @@
+set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+
+# Show available commands.
+default:
+    @just --list
+
+# --- Setup ---
+
+# Install all dependencies and git hooks.
+setup: sync pre-commit-install
+
+# --- Dev server ---
+
+run:
+    uv run manage.py runserver
+
+shell:
+    uv run manage.py shell
+
+# --- Migrations ---
+
+migrate:
+    uv run manage.py migrate
+
+makemigrations app='':
+    uv run manage.py makemigrations {{ app }}
+
+showmigrations:
+    uv run manage.py showmigrations
+
+# --- Lint & Format ---
+
+lint:
+    uv run ruff check .
+
+lint-fix:
+    uv run ruff check --fix .
+
+fmt:
+    uv run ruff format .
+
+fmt-check:
+    uv run ruff format --check .
+
+typecheck:
+    uv run mypy .
+
+check: lint fmt-check typecheck
+    uv run manage.py check
+    uv run manage.py makemigrations --check --dry-run
+
+# --- Pre-commit ---
+
+pre-commit:
+    uv run pre-commit run --all-files
+
+pre-commit-install:
+    uv run pre-commit install
+
+pre-commit-update:
+    uv run pre-commit autoupdate
+
+# --- Dependencies ---
+
+sync:
+    uv sync --all-groups
+
+lock:
+    uv lock
+
+add pkg:
+    uv add {{ pkg }}
+
+add-dev pkg:
+    uv add --group dev {{ pkg }}
+
+# --- Django utils ---
+
+createsuperuser:
+    uv run manage.py createsuperuser
+
+collectstatic:
+    uv run manage.py collectstatic --noinput
+
+openapi:
+    uv run manage.py export_openapi_schema --api config.api.api --output openapi.json --indent 2
+
+check-deploy:
+    uv run manage.py check --deploy
