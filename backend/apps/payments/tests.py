@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from typing import Any
 from unittest import mock
@@ -399,3 +400,226 @@ class PaymentAdminTests(TestCase):
         self.assertEqual(response.status_code, 200)  # форма с ошибкой, без 500
         occurrence.refresh_from_db()
         self.assertEqual(occurrence.status, OccurrenceStatus.UNPAID)
+
+
+class AdminDashboardTests(TestCase):
+    def setUp(self) -> None:
+        self.admin = User.objects.create_superuser(
+            username="root", password="x", role=UserRole.ADMIN
+        )
+        self.client.force_login(self.admin)
+        today_patch = mock.patch("django.utils.timezone.localdate", return_value=date(2026, 10, 23))
+        today_patch.start()
+        self.addCleanup(today_patch.stop)
+
+    def occurrence(self, title: str, due_date: date, **extra: Any) -> PaymentOccurrence:
+        payment = RecurringPayment.objects.create(
+            title=title,
+            amount="100.00",
+            currency="USD",
+            first_due_date=due_date,
+            anchor_day=due_date.day,
+            created_by=self.admin,
+        )
+        return PaymentOccurrence.objects.create(
+            recurring_payment=payment, amount="100.00", currency="USD", due_date=due_date, **extra
+        )
+
+    def test_dashboard_shows_totals_overdue_and_upcoming(self) -> None:
+        self.occurrence("Просроченный хостинг", date(2026, 10, 20))
+        self.occurrence("Скорый домен", date(2026, 10, 25))
+        self.occurrence(
+            "Оплаченная аренда", date(2026, 10, 5), status="paid", paid_at=date(2026, 10, 5)
+        )
+
+        response = self.client.get("/admin/")
+
+        self.assertEqual(response.status_code, 200)
+        kpi = {item["title"]: item["value"] for item in response.context["kpi"]}
+        self.assertEqual(kpi["Просрочено периодов"], 1)
+        self.assertEqual(kpi["К оплате в ближайшие 14 дней"], 1)
+        self.assertEqual(kpi["Оплачено в этом месяце"], "1 из 3")
+        usd = next(r for r in response.context["totals_table"]["rows"] if "USD" in r[0])
+        self.assertEqual(usd[1], "300,00 $")
+        self.assertContains(response, "Просроченный хостинг")
+        self.assertContains(response, "Скорый домен")
+        self.assertContains(response, "через 2 дня")
+        self.assertContains(response, "3 дня")  # просрочка
+
+        status = json.loads(response.context["status_chart"])
+        october = status["labels"].index("Окт 26")
+        by_label = {d["label"]: d["data"][october] for d in status["datasets"]}
+        self.assertEqual(
+            by_label,
+            {
+                "Оплачено вовремя": 1,
+                "Оплачено с опозданием": 0,
+                "Просрочено": 1,
+                "Ожидает оплаты": 1,
+            },
+        )
+        charts = {c["currency"]: json.loads(c["data"]) for c in response.context["currency_charts"]}
+        self.assertEqual(list(charts), ["USD"])  # пустые валюты не рисуем
+        usd = {d["label"]: d["data"][october] for d in charts["USD"]["datasets"]}
+        self.assertEqual(usd, {"План": 300.0, "Оплачено": 100.0})
+
+
+class SchemathesisRegressionTests(ApiTestCase):
+    """Находки Schemathesis: 500, мусор во входных данных, расхождения с OpenAPI."""
+
+    def raw(self, method: str, path: str, body: str, headers: dict[str, str]) -> Any:
+        return getattr(self.client, method)(
+            f"{API}{path}", body, content_type="application/json", headers=headers
+        )
+
+    def occurrence_id(self) -> int:
+        self.create_payment(first_due_date="2026-10-20")
+        return PaymentOccurrence.objects.get(due_date=date(2026, 10, 20)).pk
+
+    def test_huge_page_is_422_not_500(self) -> None:
+        for path, headers in (
+            ("/recurring-payments", self.user_headers),
+            ("/payment-occurrences", self.user_headers),
+            ("/users", self.admin_headers),
+        ):
+            with self.subTest(path=path):
+                response = self.get(path, headers, page=232759599943861239808)
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.json()["code"], "validation_error")
+                self.assertIn("page", response.json()["fields"])
+
+    def test_summary_at_end_of_calendar_is_not_500(self) -> None:
+        self.create_payment(first_due_date="2026-10-26")
+
+        response = self.get(
+            "/payments/summary", self.user_headers, date_from="9999-12-01", date_to="9999-12-31"
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_dates_must_be_iso_strings(self) -> None:
+        occurrence_id = self.occurrence_id()
+        path = f"/payment-occurrences/{occurrence_id}"
+
+        for body in ({"paid_at": 0}, {"status": "paid", "paid_at": 1700000000}):
+            with self.subTest(body=body):
+                response = self.patch(path, body, self.user_headers)
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(
+                    response.json()["fields"]["paid_at"], ["Дата в формате ГГГГ-ММ-ДД"]
+                )
+        self.assertEqual(
+            PaymentOccurrence.objects.get(pk=occurrence_id).status, OccurrenceStatus.UNPAID
+        )
+
+        response = self.get("/payment-occurrences", self.user_headers, due_to="0")
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("due_to", response.json()["fields"])
+        self.assertEqual(self.create_payment(first_due_date="20261026").status_code, 422)
+
+    def test_first_due_date_upper_bound(self) -> None:
+        self.assertEqual(self.create_payment(first_due_date="9999-12-31").status_code, 422)
+        self.assertEqual(self.create_payment(first_due_date="2036-10-23").status_code, 201)
+        response = self.create_payment(first_due_date="2036-10-24")
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("first_due_date", response.json()["fields"])
+
+    def test_control_characters_rejected(self) -> None:
+        nul, newline = chr(0), chr(10)
+        for field, value in (
+            ("title", f"x{nul}y"),
+            ("title", f"x{newline}y"),
+            ("comment", f"x{nul}y"),
+        ):
+            with self.subTest(field=field, value=repr(value)):
+                response = self.create_payment(**{field: value})
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.json()["fields"][field], ["Недопустимые символы"])
+        # Перевод строки в комментарии допустим.
+        response = self.create_payment(comment=f"строка 1{newline}строка 2")
+        self.assertEqual(response.status_code, 201)
+        response = self.get("/recurring-payments", self.user_headers, search=f"a{nul}")
+        self.assertEqual(response.status_code, 422)
+
+    def test_invalid_json_is_422(self) -> None:
+        nul = chr(0)
+        for path, method, headers in (
+            ("/auth/login", "post", {}),
+            ("/recurring-payments", "post", self.admin_headers),
+            (f"/payment-occurrences/{self.occurrence_id()}", "patch", self.user_headers),
+        ):
+            with self.subTest(path=path):
+                response = self.raw(method, path, nul, headers)
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(
+                    response.json(),
+                    {
+                        "code": "validation_error",
+                        "detail": "Некорректный JSON в теле запроса",
+                        "fields": {"body": ["Некорректный JSON"]},
+                    },
+                )
+
+    def test_non_object_body_rejected(self) -> None:
+        path = f"/payment-occurrences/{self.occurrence_id()}"
+        for body in ("[]", "[null, null]", '"str"', "5", "null"):
+            with self.subTest(body=body):
+                response = self.raw("patch", path, body, self.user_headers)
+                self.assertEqual(response.status_code, 422)
+
+    def test_patch_occurrence_variants(self) -> None:
+        path = f"/payment-occurrences/{self.occurrence_id()}"
+
+        rejected: tuple[dict[str, Any], ...] = (
+            {},
+            {"status": None},
+            {"status": "paid", "paid_at": None},
+            {"status": "unpaid", "paid_at": None},
+            {"status": "paid", "extra": 1},
+        )
+        for body in rejected:
+            with self.subTest(body=body):
+                self.assertEqual(self.patch(path, body, self.user_headers).status_code, 422)
+
+        self.assertEqual(self.patch(path, {"status": "paid"}, self.user_headers).status_code, 200)
+        fixed = self.patch(path, {"paid_at": "2026-10-21"}, self.user_headers)
+        self.assertEqual(fixed.json()["paid_at"], "2026-10-21")
+        self.assertEqual(self.patch(path, {"status": "unpaid"}, self.user_headers).status_code, 200)
+
+    def test_path_param_errors_are_documented_422(self) -> None:
+        response = self.get("/payment-occurrences/null,null", self.user_headers)
+        self.assertEqual(response.status_code, 422)
+        schema = self.client.get(f"{API}/openapi.json").json()
+        for path, method in (
+            ("/api/v1/payment-occurrences/{occurrence_id}", "get"),
+            ("/api/v1/payment-occurrences/{occurrence_id}", "patch"),
+            ("/api/v1/recurring-payments/{payment_id}", "delete"),
+            ("/api/v1/users/{user_id}", "delete"),
+            ("/api/v1/users/{user_id}", "patch"),
+        ):
+            with self.subTest(path=path, method=method):
+                self.assertIn("422", schema["paths"][path][method]["responses"])
+
+    def test_openapi_describes_rules(self) -> None:
+        schema = self.client.get(f"{API}/openapi.json").json()
+        components = schema["components"]["schemas"]
+
+        patch_in = components["PaymentOccurrencePatchIn"]
+        self.assertEqual(len(patch_in["oneOf"]), 3)
+        self.assertTrue(all(v["additionalProperties"] is False for v in patch_in["oneOf"]))
+
+        email = components["UserCreateIn"]["properties"]["email"]
+        self.assertIn({"format": "email"}, email["anyOf"])
+
+        for path in ("/api/v1/auth/refresh", "/api/v1/auth/logout"):
+            params = {p["name"]: p for p in schema["paths"][path]["post"]["parameters"]}
+            self.assertEqual(params["X-Requested-With"]["schema"]["enum"], ["XMLHttpRequest"])
+            self.assertTrue(params["X-Requested-With"]["required"])
+            self.assertEqual(params["refresh_token"]["in"], "cookie")
+
+        page = next(
+            p
+            for p in schema["paths"]["/api/v1/recurring-payments"]["get"]["parameters"]
+            if p["name"] == "page"
+        )
+        self.assertEqual(page["schema"]["maximum"], 100_000)

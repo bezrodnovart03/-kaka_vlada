@@ -54,6 +54,14 @@ export function isoDate(year: number, month: number, day: number): ISODate {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+/** Сдвиг на n месяцев; нет такого числа в месяце — последний день (как на бэкенде). */
+export function addMonths(iso: ISODate, n: number): ISODate {
+  const [y, m, d] = iso.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + n, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  return isoDate(target.getUTCFullYear(), target.getUTCMonth() + 1, Math.min(d, lastDay));
+}
+
 export function monthBounds(iso: ISODate, offsetMonths = 0): [ISODate, ISODate] {
   const [y, m] = iso.split('-').map(Number);
   const first = new Date(Date.UTC(y, m - 1 + offsetMonths, 1));

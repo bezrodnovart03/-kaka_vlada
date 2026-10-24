@@ -39,7 +39,7 @@
 
 | Часть | Технологии |
 |---|---|
-| Backend | Python 3.14, Django 6.0, django-ninja (REST API + OpenAPI/Swagger), django-ninja-jwt, django-simple-history, pydantic-settings |
+| Backend | Python 3.14, Django 6.0, django-ninja (REST API + OpenAPI/Swagger), django-ninja-jwt, django-simple-history, django-unfold (админка), pydantic-settings |
 | Frontend | React 18, TypeScript, Vite, react-router |
 | Бот | Telegram Bot API (stdlib, без сторонних библиотек) |
 | Качество | ruff (линтер + форматтер), mypy `strict` с плагинами django и pydantic, pre-commit, Django TestCase |

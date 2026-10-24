@@ -669,6 +669,107 @@ td.actions > * + * {
   gap: 6px;
 }
 
+/* ── поле даты (DateInput) — вместо системного календаря ── */
+.date-input {
+  font: inherit;
+  font-weight: 400;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  min-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+}
+.date-input:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+.date-input:focus-visible,
+.date-input-open {
+  outline: 2px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  border-color: var(--primary);
+}
+.date-input-icon {
+  color: var(--muted);
+  flex: none;
+}
+.form label .date-input {
+  width: 100%;
+}
+.datepicker {
+  position: fixed;
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(10, 14, 22, 0.18);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.datepicker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.datepicker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.datepicker-weekday {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.datepicker-day {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  height: 34px;
+  cursor: pointer;
+}
+.datepicker-day:hover:not(:disabled) {
+  background: var(--muted-bg);
+}
+.datepicker-day:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 50%, transparent);
+}
+.datepicker-outside {
+  color: var(--muted);
+}
+.datepicker-today {
+  box-shadow: inset 0 0 0 1.5px var(--primary);
+  font-weight: 600;
+}
+.datepicker-selected,
+.datepicker-selected:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+}
+.datepicker-day:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.datepicker-foot {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
 @media (max-width: 720px) {
   .topbar {
     padding: 10px 16px;

@@ -269,3 +269,31 @@ class UsersApiTests(TestCase):
         self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
         self.assertEqual(self.client.get(f"{URL}/me", headers=self.user_headers).status_code, 401)
         self.assertEqual(self.send("delete", f"/{self.user.id}").status_code, 404)
+
+
+class UsersInputRegressionTests(UsersApiTests):
+    """Находки Schemathesis по /users."""
+
+    def test_patch_with_non_object_body_rejected(self) -> None:
+        target = User.objects.create_user(username="target", password="target-pass-1")
+        for body in ("[null, null]", "[]", '"str"', "5", "null"):
+            with self.subTest(body=body):
+                response = self.client.patch(
+                    f"/api/v1/users/{target.pk}",
+                    body,
+                    content_type="application/json",
+                    headers=self.admin_headers,
+                )
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(response.json()["code"], "validation_error")
+
+    def test_names_reject_control_characters(self) -> None:
+        nul = chr(0)
+        response = self.client.post(
+            "/api/v1/users",
+            {"username": "bob", "password": "bob-pass-123", "first_name": f"Bo{nul}b"},
+            content_type="application/json",
+            headers=self.admin_headers,
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["fields"]["first_name"], ["Недопустимые символы"])

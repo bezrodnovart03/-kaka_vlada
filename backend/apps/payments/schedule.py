@@ -17,8 +17,13 @@ def shift_months(start: date, months: int, anchor_day: int) -> date:
 
 
 def due_dates(first_due_date: date, step_months: int, anchor_day: int) -> Iterator[date]:
-    """Бесконечная последовательность сроков, начиная с `first_due_date`."""
+    """Последовательность сроков, начиная с `first_due_date`, до конца 9999 года (date.max)."""
     index = 0
     while True:
-        yield shift_months(first_due_date, index * step_months, anchor_day)
+        try:
+            due_date = shift_months(first_due_date, index * step_months, anchor_day)
+        except ValueError:
+            # Дальше 9999 года дат нет: итоги за декабрь 9999 падали с 500.
+            return
+        yield due_date
         index += 1

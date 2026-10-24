@@ -10,6 +10,7 @@ dependencies = [
     "django-ninja-jwt>=5.4.5",
     "django-simple-history>=3.13.0",
     "django-stubs-ext>=6.1.2",
+    "django-unfold>=0.110.0",
     "pydantic-settings>=2.16.1",
 ]
 
@@ -19,6 +20,7 @@ dev = [
     "mypy>=2.4.0",
     "pre-commit>=4.7.0",
     "ruff>=0.17.2",
+    "schemathesis>=4.32.4",
 ]
 
 [tool.ruff]
@@ -42,6 +44,15 @@ exclude = ["/migrations/"]
 # У django-simple-history нет py.typed и stubs.
 module = ["simple_history.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# У django-unfold тоже нет py.typed; @display из unfold.decorators не типизирован.
+module = ["unfold.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["apps.*.admin"]
+disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
 module = ["*.migrations.*"]

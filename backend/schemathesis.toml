@@ -1,0 +1,21 @@
+# Schemathesis: фаззинг API против OpenAPI-схемы (just fuzz).
+# https://schemathesis.readthedocs.io/
+
+# Бизнес-правила, которые OpenAPI выразить не может (описаны в description операций):
+# по схеме запрос валиден, но сервер законно отвечает 422 — это не расхождение.
+# include-name (метод + путь): несколько include-* в одной секции объединяются через ИЛИ.
+
+[[operations]]
+# Диапазон не длиннее 366 дней, date_from не позже date_to.
+include-name = "GET /api/v1/payments/summary"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "422"]
+
+[[operations]]
+# first_due_date — не раньше чем 12 месяцев назад и не позже чем через 10 лет.
+include-name = "POST /api/v1/recurring-payments"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "422"]
+
+[[operations]]
+# paid_at не может быть в будущем; исправление даты у неоплаченного — 409.
+include-name = "PATCH /api/v1/payment-occurrences/{occurrence_id}"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "409", "422"]

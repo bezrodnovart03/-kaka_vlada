@@ -1,11 +1,20 @@
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from ninja import Schema
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
-from apps.core.schemas import LocalDateTime, Money, PageQuery, UserBrief
+from apps.core.schemas import (
+    InputSchema,
+    ISODate,
+    LocalDateTime,
+    Money,
+    MultilineText,
+    PageQuery,
+    PlainText,
+    UserBrief,
+)
 
 from .models import (
     Currency,
@@ -21,13 +30,15 @@ OccurrenceState = Literal["unpaid", "paid", "overdue", "upcoming"]
 # ── регулярные платежи ───────────────────────────────────
 
 
-class RecurringPaymentIn(Schema):
-    title: str = Field(min_length=1, max_length=120)
+class RecurringPaymentIn(InputSchema):
+    title: PlainText = Field(min_length=1, max_length=120)
     amount: Decimal = Field(max_digits=12, decimal_places=2, examples=["85000.00"])
     currency: Currency
-    first_due_date: date
+    first_due_date: ISODate = Field(
+        description="Не раньше чем 12 месяцев назад и не позже чем через 10 лет от сегодня."
+    )
     period: Period = Period.MONTHLY
-    comment: str | None = None
+    comment: MultilineText | None = None
 
     @field_validator("title")
     @classmethod
@@ -86,7 +97,7 @@ class RecurringPaymentOut(Schema):
 
 class RecurringPaymentFilter(PageQuery):
     currency: Currency | None = None
-    search: str | None = Field(None, max_length=120)
+    search: PlainText | None = Field(None, max_length=120)
     include_inactive: bool = False
 
 
@@ -114,22 +125,65 @@ class PaymentOccurrenceOut(Schema):
     reminder_sent_at: LocalDateTime | None
 
 
-class PaymentOccurrencePatchIn(Schema):
+_DATE_JSON_SCHEMA = {"type": "string", "format": "date", "example": "2026-10-23"}
+
+
+def _patch_variants_schema(schema: dict[str, Any]) -> None:
+    """OpenAPI: ровно три варианта тела, как `PaymentOccurrencePatchIn` в docs/API.md §9."""
+
+    def variant(title: str, properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
+        return {
+            "title": title,
+            "type": "object",
+            "properties": properties,
+            "required": required,
+            "additionalProperties": False,
+        }
+
+    variants = [
+        variant(
+            "Отметить оплаченным (без paid_at — сегодня)",
+            {"status": {"const": "paid"}, "paid_at": _DATE_JSON_SCHEMA},
+            ["status"],
+        ),
+        variant("Отменить оплату", {"status": {"const": "unpaid"}}, ["status"]),
+        variant("Исправить дату оплаты", {"paid_at": _DATE_JSON_SCHEMA}, ["paid_at"]),
+    ]
+    title = schema.get("title")
+    schema.clear()
+    schema.update({"title": title, "oneOf": variants})
+
+
+class PaymentOccurrencePatchIn(InputSchema):
     """
     Один из вариантов: `{status: paid[, paid_at]}`, `{status: unpaid}`, `{paid_at}`.
     Сочетания проверяет эндпоинт: для них нужна «сегодняшняя» дата и состояние периода.
     """
 
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_patch_variants_schema)
+
+    # None — «поле не прислано»; явный null отклоняется (в контракте null не предусмотрен).
     status: OccurrenceStatus | None = None
-    paid_at: date | None = None
+    paid_at: ISODate | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_nulls(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            nulls = [
+                name for name in ("status", "paid_at") if name in values and values[name] is None
+            ]
+            if nulls:
+                raise ValueError(f"Поле не может быть null: {', '.join(nulls)}")
+        return values
 
 
 class OccurrenceFilter(PageQuery):
     recurring_payment_id: int | None = None
     currency: Currency | None = None
     state: OccurrenceState | None = None
-    due_from: date | None = None
-    due_to: date | None = None
+    due_from: ISODate | None = None
+    due_to: ISODate | None = None
     ordering: Literal["due_date", "-due_date"] = "due_date"
 
 
@@ -137,8 +191,8 @@ class OccurrenceFilter(PageQuery):
 
 
 class SummaryQuery(Schema):
-    date_from: date | None = None
-    date_to: date | None = None
+    date_from: ISODate | None = None
+    date_to: ISODate | None = None
 
 
 class CurrencyTotalsOut(Schema):

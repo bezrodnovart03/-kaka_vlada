@@ -13,8 +13,9 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import sys
 
 import django_stubs_ext
+from django.urls import reverse_lazy
 
-from .env import settings
+from .env import BASE_DIR, settings
 
 # Дженерики вида ModelAdmin[User] в рантайме (для django-stubs).
 django_stubs_ext.monkeypatch()
@@ -34,6 +35,10 @@ ALLOWED_HOSTS = settings.django.allowed_hosts
 # Application definition
 
 INSTALLED_APPS = [
+    # Unfold — оформление админки; должен стоять до django.contrib.admin.
+    "unfold",
+    "unfold.contrib.filters",
+    "unfold.contrib.simple_history",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -66,7 +71,8 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # templates/admin/index.html — дашборд Unfold поверх стандартной главной.
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -169,6 +175,73 @@ TELEGRAM_PAY_BUTTON = settings.reminders.pay_button
 REMINDER_DAYS_BEFORE = settings.reminders.days_before
 REMINDER_CHECK_INTERVAL_SECONDS = settings.reminders.check_interval_seconds
 PANEL_URL = settings.reminders.panel_url
+
+
+# Админка (Unfold)
+# https://unfoldadmin.com/docs/configuration/settings/
+
+UNFOLD = {
+    "SITE_TITLE": "Invoice Keeper",
+    "SITE_HEADER": "Invoice Keeper",
+    "SITE_SUBHEADER": "Администрирование",
+    "SITE_SYMBOL": "receipt_long",
+    "SITE_URL": PANEL_URL or "/",
+    "SHOW_VIEW_ON_SITE": False,
+    "ENVIRONMENT": "apps.core.admin_ui.environment_callback",
+    "DASHBOARD_CALLBACK": "apps.payments.dashboard.dashboard_callback",
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            {
+                "title": "Платежи",
+                "items": [
+                    {
+                        "title": "Регулярные платежи",
+                        "icon": "event_repeat",
+                        "link": reverse_lazy("admin:payments_recurringpayment_changelist"),
+                    },
+                    {
+                        "title": "Периоды оплаты",
+                        "icon": "calendar_month",
+                        "link": reverse_lazy("admin:payments_paymentoccurrence_changelist"),
+                        "badge": "apps.core.admin_ui.overdue_badge",
+                        "badge_variant": "danger",
+                    },
+                ],
+            },
+            {
+                "title": "Доступ",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Пользователи",
+                        "icon": "person",
+                        "link": reverse_lazy("admin:users_user_changelist"),
+                    },
+                    {
+                        "title": "Группы",
+                        "icon": "group",
+                        "link": reverse_lazy("admin:auth_group_changelist"),
+                        "permission": "apps.core.admin_ui.superuser_only",
+                    },
+                    {
+                        "title": "Выданные токены",
+                        "icon": "key",
+                        "link": reverse_lazy("admin:token_blacklist_outstandingtoken_changelist"),
+                        "permission": "apps.core.admin_ui.superuser_only",
+                    },
+                    {
+                        "title": "Отозванные токены",
+                        "icon": "key_off",
+                        "link": reverse_lazy("admin:token_blacklist_blacklistedtoken_changelist"),
+                        "permission": "apps.core.admin_ui.superuser_only",
+                    },
+                ],
+            },
+        ],
+    },
+}
 
 
 # Логи: авторизация и действия пользователей (logger "audit"), напоминания.

@@ -96,5 +96,10 @@ collectstatic:
 openapi:
     uv run manage.py export_openapi_schema --api config.api.api --output openapi.json --indent 2
 
+# Фаззинг API Schemathesis (настройки — schemathesis.toml). Нужны запущенный сервер
+# и TOKEN=<access-токен>. Фаззер создаёт и удаляет данные — запускать на копии БД.
+fuzz url='http://127.0.0.1:8000':
+    uv run st run {{ url }}/api/v1/openapi.json -H "Authorization: Bearer {{ env('TOKEN') }}" --checks all -w 1
+
 check-deploy:
     uv run manage.py check --deploy

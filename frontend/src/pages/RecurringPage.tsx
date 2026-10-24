@@ -15,7 +15,8 @@ import {
   useLoader,
   useToast,
 } from '../components/ui';
-import { CURRENCIES, formatDate, formatDateTime, formatMoney, PERIOD_LABEL } from '../format';
+import { DateInput } from '../components/DateInput';
+import { addMonths, CURRENCIES, formatDate, formatDateTime, formatMoney, PERIOD_LABEL } from '../format';
 
 const PAGE_SIZE = 50;
 
@@ -256,11 +257,13 @@ function CreatePaymentDialog({
         <div className="form-row">
           <label>
             Дата ближайшей оплаты
-            <input
-              type="date"
-              required
+            {/* Окно как на бэкенде: не раньше 12 месяцев назад и не позже чем через 10 лет. */}
+            <DateInput
               value={form.first_due_date}
-              onChange={(e) => set('first_due_date', e.target.value)}
+              min={addMonths(today, -12)}
+              max={addMonths(today, 120)}
+              today={today}
+              onChange={(value) => set('first_due_date', value)}
             />
             <FieldError error={error} name="first_due_date" />
           </label>

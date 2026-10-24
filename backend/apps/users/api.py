@@ -33,6 +33,24 @@ audit = logging.getLogger("audit")
 
 _TOKEN_INVALID_DETAIL = "Токен недействителен или просрочен"
 
+# В OpenAPI описываем то, что ninja не видит в сигнатуре: обязательный заголовок
+# против CSRF и refresh-cookie. Без этого Swagger и Schemathesis получали только 403.
+_XHR_HEADER_PARAM = {
+    "name": "X-Requested-With",
+    "in": "header",
+    "required": True,
+    "description": "Защита refresh-cookie от CSRF. Без заголовка — 403 csrf_failed.",
+    "schema": {"type": "string", "enum": ["XMLHttpRequest"]},
+}
+_REFRESH_COOKIE_PARAM = {
+    "name": settings.JWT_REFRESH_COOKIE_NAME,
+    "in": "cookie",
+    "required": False,
+    "description": "HttpOnly-cookie с refresh-токеном; ставят login и refresh.",
+    "schema": {"type": "string"},
+}
+_COOKIE_AUTH_OPENAPI = {"parameters": [_XHR_HEADER_PARAM, _REFRESH_COOKIE_PARAM]}
+
 
 def _require_xhr(request: HttpRequest) -> None:
     # Защита refresh-cookie от CSRF: кросс-сайтовая форма не может выставить этот заголовок,
@@ -100,6 +118,7 @@ def login(request: HttpRequest, response: HttpResponse, payload: LoginIn) -> Acc
     auth=None,
     response={200: AccessOut, 401: ErrorOut, 403: ErrorOut},
     summary="Новый access-токен по refresh-cookie",
+    openapi_extra=_COOKIE_AUTH_OPENAPI,
 )
 def refresh(request: HttpRequest, response: HttpResponse) -> tuple[int, AccessOut | ErrorOut]:
     _require_xhr(request)
@@ -139,6 +158,7 @@ def me(request: AuthedRequest) -> User:
     auth=None,
     response={204: None, 403: ErrorOut},
     summary="Выход: отзыв refresh-токена и удаление cookie",
+    openapi_extra=_COOKIE_AUTH_OPENAPI,
 )
 def logout(request: HttpRequest, response: HttpResponse) -> tuple[int, None]:
     # Без auth: выйти можно и с истёкшим access. Идемпотентно — всегда 204.
@@ -256,7 +276,7 @@ def patch_user(request: AuthedRequest, user_id: int, payload: UserPatchIn) -> Us
 
 @users_router.delete(
     "/{user_id}",
-    response={204: None, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut},
+    response={204: None, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 422: ErrorOut},
     summary="Удаление пользователя (админ)",
 )
 def delete_user(request: AuthedRequest, user_id: int) -> tuple[int, None]:

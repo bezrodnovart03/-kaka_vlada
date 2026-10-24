@@ -31,6 +31,8 @@ occurrences_router = Router(tags=["payment-occurrences"])
 summary_router = Router(tags=["summary"])
 
 MAX_SUMMARY_DAYS = 366
+# Сроки дальше этого горизонта — почти наверняка опечатка в годе (9999-12-31 принимался).
+MAX_FIRST_DUE_YEARS = 10
 
 
 # ── регулярные платежи ───────────────────────────────────
@@ -61,6 +63,10 @@ def list_recurring_payments(
     auth=admin_auth,
     response={201: RecurringPaymentOut, 401: ErrorOut, 403: ErrorOut, 422: ErrorOut},
     summary="Создание регулярного платежа (админ)",
+    description=(
+        "first_due_date — не раньше чем 12 месяцев назад и не позже чем через "
+        f"{MAX_FIRST_DUE_YEARS} лет от сегодня, иначе 422."
+    ),
 )
 def create_recurring_payment(
     request: AuthedRequest, payload: RecurringPaymentIn
@@ -68,6 +74,10 @@ def create_recurring_payment(
     today = local_today()
     if payload.first_due_date < shift_months(today, -12, today.day):
         raise field_error("first_due_date", "Дата не может быть раньше чем 12 месяцев назад")
+    if payload.first_due_date > shift_months(today, 12 * MAX_FIRST_DUE_YEARS, today.day):
+        raise field_error(
+            "first_due_date", f"Дата не может быть позже чем через {MAX_FIRST_DUE_YEARS} лет"
+        )
 
     payment = services.create_payment(
         user=request.auth,
@@ -89,7 +99,7 @@ def create_recurring_payment(
 @recurring_router.delete(
     "/{payment_id}",
     auth=admin_auth,
-    response={204: None, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ErrorOut},
+    response={204: None, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 409: ErrorOut, 422: ErrorOut},
     summary="Прекращение платежа и напоминаний с сохранением истории (админ)",
 )
 def delete_recurring_payment(request: AuthedRequest, payment_id: int) -> tuple[int, None]:
@@ -146,7 +156,7 @@ def list_occurrences(request: AuthedRequest, filters: Query[OccurrenceFilter]) -
 
 @occurrences_router.get(
     "/{occurrence_id}",
-    response={200: PaymentOccurrenceOut, 401: ErrorOut, 404: ErrorOut},
+    response={200: PaymentOccurrenceOut, 401: ErrorOut, 404: ErrorOut, 422: ErrorOut},
     summary="Конкретный период",
 )
 def get_occurrence(request: AuthedRequest, occurrence_id: int) -> PaymentOccurrence:
@@ -163,6 +173,10 @@ def get_occurrence(request: AuthedRequest, occurrence_id: int) -> PaymentOccurre
         422: ErrorOut,
     },
     summary="Отметить или отменить оплату, исправить фактическую дату",
+    description=(
+        "Тело — один из трёх вариантов (oneOf). paid_at не может быть в будущем (422); "
+        "исправление даты у неоплаченного периода — 409 occurrence_not_paid."
+    ),
 )
 def patch_occurrence(
     request: AuthedRequest, occurrence_id: int, payload: PaymentOccurrencePatchIn
@@ -196,6 +210,10 @@ def patch_occurrence(
     "/summary",
     response={200: SummaryOut, 401: ErrorOut, 422: ErrorOut},
     summary="Итоговые суммы по валютам за период",
+    description=(
+        "По умолчанию — текущий месяц. date_from позже date_to или диапазон длиннее "
+        f"{MAX_SUMMARY_DAYS} дней — 422."
+    ),
 )
 def payments_summary(request: AuthedRequest, query: Query[SummaryQuery]) -> services.Summary:
     today = local_today()

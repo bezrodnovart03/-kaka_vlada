@@ -143,7 +143,8 @@ class PaymentOccurrence(models.Model):
         indexes = [models.Index(fields=["status", "due_date"])]
 
     def __str__(self) -> str:
-        return f"{self.recurring_payment_id} @ {self.due_date}"
+        # Без обращения к платежу (лишний запрос на строку в списках и инлайне).
+        return f"Срок {self.due_date:%d.%m.%Y}"
 
     @property
     def is_paid(self) -> bool:

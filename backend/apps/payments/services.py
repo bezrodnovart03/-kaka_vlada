@@ -205,6 +205,9 @@ class Summary:
     today: date
     totals: list[CurrencyTotals] = field(default_factory=list)
 
+    def totals_for(self, currency: str) -> CurrencyTotals:
+        return next(t for t in self.totals if t.currency == currency)
+
 
 def summarize(date_from: date, date_to: date, today: date) -> Summary:
     """

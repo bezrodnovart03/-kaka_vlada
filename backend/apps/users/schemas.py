@@ -3,14 +3,14 @@ from typing import Annotated
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email
 from ninja import ModelSchema, Schema
-from pydantic import Field, field_validator
+from pydantic import Field, WithJsonSchema, field_validator
 
-from apps.core.schemas import LocalDateTime
+from apps.core.schemas import InputSchema, LocalDateTime, PlainText
 
 from .models import User, UserRole
 
 
-class LoginIn(Schema):
+class LoginIn(InputSchema):
     username: str = Field(min_length=1, max_length=150)
     password: str = Field(min_length=1, max_length=128)
 
@@ -37,8 +37,21 @@ USERNAME_PATTERN = r"^[\w.@+-]+$"
 
 Username = Annotated[str, Field(min_length=1, max_length=150, pattern=USERNAME_PATTERN)]
 Password = Annotated[str, Field(min_length=8, max_length=128)]
-Email = Annotated[str, Field(max_length=254)]
-Name = Annotated[str, Field(max_length=150)]
+# Пустая строка («не задан») или корректный email — так и в схеме, чтобы генераторы
+# (Schemathesis, формы) не считали валидной любую строку.
+Email = Annotated[
+    PlainText,
+    Field(max_length=254),
+    WithJsonSchema(
+        {
+            "type": "string",
+            "maxLength": 254,
+            "anyOf": [{"format": "email"}, {"maxLength": 0}],
+            "example": "anna@example.com",
+        }
+    ),
+]
+Name = Annotated[PlainText, Field(max_length=150)]
 
 
 class UserOut(Schema):
@@ -54,7 +67,7 @@ class UserOut(Schema):
     date_joined: LocalDateTime
 
 
-class UserCreateIn(Schema):
+class UserCreateIn(InputSchema):
     username: Username
     password: Password
     email: Email = ""
@@ -67,7 +80,7 @@ class UserCreateIn(Schema):
         return _validate_email(value)
 
 
-class UserPatchIn(Schema):
+class UserPatchIn(InputSchema):
     username: Username | None = None
     password: Password | None = None
     email: Email | None = None

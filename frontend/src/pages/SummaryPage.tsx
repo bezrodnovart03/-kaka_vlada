@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { api } from '../api/endpoints';
 import type { ISODate } from '../api/types';
 import { useAuth } from '../auth';
+import { DateInput } from '../components/DateInput';
 import { SummaryCards } from '../components/SummaryCards';
 import { ErrorBox, useLoader } from '../components/ui';
 import { formatDate, monthBounds } from '../format';
@@ -44,17 +45,19 @@ export function SummaryPage() {
         </div>
         {preset === 'custom' && (
           <div className="range">
-            <input
-              type="date"
+            <DateInput
               value={custom[0]}
-              onChange={(e) => setCustom([e.target.value, custom[1]])}
+              max={custom[1]}
+              today={today}
+              onChange={(value) => setCustom([value, custom[1]])}
               aria-label="С"
             />
             —
-            <input
-              type="date"
+            <DateInput
               value={custom[1]}
-              onChange={(e) => setCustom([custom[0], e.target.value])}
+              min={custom[0]}
+              today={today}
+              onChange={(value) => setCustom([custom[0], value])}
               aria-label="По"
             />
           </div>

@@ -5,6 +5,7 @@ import { api } from '../api/endpoints';
 import type { PaymentOccurrenceOut } from '../api/types';
 import { useAuth } from '../auth';
 import { formatDate, formatMoney } from '../format';
+import { DateInput } from './DateInput';
 import { FieldError, Modal, useToast } from './ui';
 
 type Mode = 'pay' | 'correct';
@@ -128,7 +129,7 @@ function PaidDateDialog({
         </p>
         <label>
           Фактическая дата оплаты
-          <input type="date" value={paidAt} max={today} required onChange={(e) => setPaidAt(e.target.value)} />
+          <DateInput value={paidAt} max={today} today={today} onChange={setPaidAt} />
           <FieldError error={error} name="paid_at" />
         </label>
         <p className="hint">

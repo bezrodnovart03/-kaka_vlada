@@ -1,0 +1,75 @@
+{% extends 'admin/base.html' %}
+
+{% load i18n unfold %}
+
+{% comment %}
+    Дашборд главной админки. Данные — apps.payments.dashboard.dashboard_callback.
+    Классы только из собранного CSS Unfold: свой Tailwind в проекте не собирается.
+{% endcomment %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+    <div class="flex flex-col gap-8">
+        <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {% for item in kpi %}
+                {% component "unfold/components/card.html" with href=item.href %}
+                    {% component "unfold/components/text.html" %}
+                        {{ item.title }}
+                    {% endcomponent %}
+                    {% component "unfold/components/title.html" with class="text-3xl" %}
+                        {% if item.danger and item.value %}
+                            <span class="text-red-600">{{ item.value }}</span>
+                        {% else %}
+                            {{ item.value }}
+                        {% endif %}
+                    {% endcomponent %}
+                {% endcomponent %}
+            {% endfor %}
+        </div>
+
+        {% component "unfold/components/card.html" with title="Итоги за "|add:month_title %}
+            {% component "unfold/components/table.html" with table=totals_table card_included=1 striped=1 %}{% endcomponent %}
+        {% endcomponent %}
+
+        {% component "unfold/components/card.html" with title="Периоды по месяцам" description="Статус периодов по месяцу срока: полгода назад и полгода вперёд" %}
+            {% component "unfold/components/chart/bar.html" with data=status_chart options=status_chart_options height=280 %}{% endcomponent %}
+        {% endcomponent %}
+
+        {% if currency_charts %}
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-{{ currency_charts|length }}">
+                {% for chart in currency_charts %}
+                    {% component "unfold/components/card.html" with title="Платежи в "|add:chart.currency description="Серый — план, цветной — оплачено" %}
+                        {% component "unfold/components/chart/bar.html" with data=chart.data height=220 %}{% endcomponent %}
+                    {% endcomponent %}
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {% component "unfold/components/card.html" with title="Ближайшие сроки" %}
+                {% if upcoming_table.rows %}
+                    {% component "unfold/components/table.html" with table=upcoming_table card_included=1 %}{% endcomponent %}
+                {% else %}
+                    {% component "unfold/components/text.html" %}
+                        В ближайшие {{ upcoming_days }} дней оплат нет.
+                    {% endcomponent %}
+                {% endif %}
+            {% endcomponent %}
+
+            {% component "unfold/components/card.html" with title="Просроченные периоды" %}
+                {% if overdue_table.rows %}
+                    {% component "unfold/components/table.html" with table=overdue_table card_included=1 %}{% endcomponent %}
+                {% else %}
+                    {% component "unfold/components/text.html" %}
+                        Просрочек нет.
+                    {% endcomponent %}
+                {% endif %}
+            {% endcomponent %}
+        </div>
+    </div>
+{% endblock %}

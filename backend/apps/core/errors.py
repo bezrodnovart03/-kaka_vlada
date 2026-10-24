@@ -106,6 +106,8 @@ def _field_message(error: dict[str, Any]) -> str:
             return "Слишком большая сумма"
         case "date_from_datetime_parsing" | "date_parsing" | "date_type":
             return "Некорректная дата"
+        case "extra_forbidden":
+            return "Неизвестное поле"
         case "enum" | "literal_error":
             return "Недопустимое значение"
         case "int_parsing" | "int_type":
@@ -155,6 +157,15 @@ def register_exception_handlers(api: NinjaAPI) -> None:
 
     @api.exception_handler(HttpError)
     def on_http_error(request: HttpRequest, exc: HttpError) -> HttpResponse:
+        if exc.status_code == 400:
+            # ninja: «Cannot parse request body (...)» на невалидном JSON. По контракту
+            # ошибки ввода — 422, и текст парсера (англ., с позицией) наружу не отдаём.
+            error = ErrorOut(
+                code=ErrorCode.VALIDATION_ERROR,
+                detail="Некорректный JSON в теле запроса",
+                fields={"body": ["Некорректный JSON"]},
+            )
+            return api.create_response(request, error, status=422)
         return respond_by_status(request, exc.status_code, str(exc))
 
     @api.exception_handler(Http404)

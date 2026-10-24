@@ -62,7 +62,29 @@
       "post": {
         "operationId": "apps_users_api_refresh",
         "summary": "Новый access-токен по refresh-cookie",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "X-Requested-With",
+            "in": "header",
+            "required": true,
+            "description": "Защита refresh-cookie от CSRF. Без заголовка — 403 csrf_failed.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "XMLHttpRequest"
+              ]
+            }
+          },
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "description": "HttpOnly-cookie с refresh-токеном; ставят login и refresh.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -141,7 +163,29 @@
       "post": {
         "operationId": "apps_users_api_logout",
         "summary": "Выход: отзыв refresh-токена и удаление cookie",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "X-Requested-With",
+            "in": "header",
+            "required": true,
+            "description": "Защита refresh-cookie от CSRF. Без заголовка — 403 csrf_failed.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "XMLHttpRequest"
+              ]
+            }
+          },
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "description": "HttpOnly-cookie с refresh-токеном; ставят login и refresh.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "204": {
             "description": "No Content"
@@ -172,6 +216,7 @@
             "name": "page",
             "schema": {
               "default": 1,
+              "maximum": 100000,
               "minimum": 1,
               "title": "Page",
               "type": "integer"
@@ -212,6 +257,7 @@
               "anyOf": [
                 {
                   "maxLength": 120,
+                  "pattern": "^[^\\x00-\\x1f\\x7f]*$",
                   "type": "string"
                 },
                 {
@@ -320,6 +366,7 @@
             }
           }
         },
+        "description": "first_due_date — не раньше чем 12 месяцев назад и не позже чем через 10 лет от сегодня, иначе 422.",
         "tags": [
           "recurring-payments"
         ],
@@ -398,6 +445,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -420,6 +477,7 @@
             "name": "page",
             "schema": {
               "default": 1,
+              "maximum": 100000,
               "minimum": 1,
               "title": "Page",
               "type": "integer"
@@ -497,6 +555,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "example": "2026-10-23",
                   "format": "date",
                   "type": "string"
                 },
@@ -514,6 +573,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "example": "2026-10-23",
                   "format": "date",
                   "type": "string"
                 },
@@ -627,6 +687,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -704,6 +774,7 @@
             }
           }
         },
+        "description": "Тело — один из трёх вариантов (oneOf). paid_at не может быть в будущем (422); исправление даты у неоплаченного периода — 409 occurrence_not_paid.",
         "tags": [
           "payment-occurrences"
         ],
@@ -735,6 +806,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "example": "2026-10-23",
                   "format": "date",
                   "type": "string"
                 },
@@ -752,6 +824,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "example": "2026-10-23",
                   "format": "date",
                   "type": "string"
                 },
@@ -796,6 +869,7 @@
             }
           }
         },
+        "description": "По умолчанию — текущий месяц. date_from позже date_to или диапазон длиннее 366 дней — 422.",
         "tags": [
           "summary"
         ],
@@ -816,6 +890,7 @@
             "name": "page",
             "schema": {
               "default": 1,
+              "maximum": 100000,
               "minimum": 1,
               "title": "Page",
               "type": "integer"
@@ -1105,6 +1180,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1301,6 +1386,7 @@
         "properties": {
           "page": {
             "default": 1,
+            "maximum": 100000,
             "minimum": 1,
             "title": "Page",
             "type": "integer"
@@ -1326,6 +1412,7 @@
             "anyOf": [
               {
                 "maxLength": 120,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
                 "type": "string"
               },
               {
@@ -1545,6 +1632,7 @@
           "title": {
             "maxLength": 120,
             "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$",
             "title": "Title",
             "type": "string"
           },
@@ -1566,6 +1654,8 @@
             "$ref": "#/components/schemas/Currency"
           },
           "first_due_date": {
+            "description": "Не раньше чем 12 месяцев назад и не позже чем через 10 лет от сегодня.",
+            "example": "2026-10-23",
             "format": "date",
             "title": "First Due Date",
             "type": "string"
@@ -1581,6 +1671,7 @@
           "comment": {
             "anyOf": [
               {
+                "pattern": "^[^\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]*$",
                 "type": "string"
               },
               {
@@ -1603,6 +1694,7 @@
         "properties": {
           "page": {
             "default": 1,
+            "maximum": 100000,
             "minimum": 1,
             "title": "Page",
             "type": "integer"
@@ -1655,6 +1747,7 @@
           "due_from": {
             "anyOf": [
               {
+                "example": "2026-10-23",
                 "format": "date",
                 "type": "string"
               },
@@ -1667,6 +1760,7 @@
           "due_to": {
             "anyOf": [
               {
+                "example": "2026-10-23",
                 "format": "date",
                 "type": "string"
               },
@@ -1832,39 +1926,62 @@
         "type": "object"
       },
       "PaymentOccurrencePatchIn": {
-        "description": "Один из вариантов: `{status: paid[, paid_at]}`, `{status: unpaid}`, `{paid_at}`.\nСочетания проверяет эндпоинт: для них нужна «сегодняшняя» дата и состояние периода.",
-        "properties": {
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OccurrenceStatus"
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "paid"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "paid_at": {
-            "anyOf": [
-              {
+              "paid_at": {
+                "example": "2026-10-23",
                 "format": "date",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
+            },
+            "required": [
+              "status"
             ],
-            "title": "Paid At"
+            "title": "Отметить оплаченным (без paid_at — сегодня)",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "const": "unpaid"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "title": "Отменить оплату",
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "paid_at": {
+                "example": "2026-10-23",
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "paid_at"
+            ],
+            "title": "Исправить дату оплаты",
+            "type": "object"
           }
-        },
-        "title": "PaymentOccurrencePatchIn",
-        "type": "object"
+        ],
+        "title": "PaymentOccurrencePatchIn"
       },
       "SummaryQuery": {
         "properties": {
           "date_from": {
             "anyOf": [
               {
+                "example": "2026-10-23",
                 "format": "date",
                 "type": "string"
               },
@@ -1877,6 +1994,7 @@
           "date_to": {
             "anyOf": [
               {
+                "example": "2026-10-23",
                 "format": "date",
                 "type": "string"
               },
@@ -1983,6 +2101,7 @@
         "properties": {
           "page": {
             "default": 1,
+            "maximum": 100000,
             "minimum": 1,
             "title": "Page",
             "type": "integer"
@@ -2101,7 +2220,16 @@
             "type": "string"
           },
           "email": {
+            "anyOf": [
+              {
+                "format": "email"
+              },
+              {
+                "maxLength": 0
+              }
+            ],
             "default": "",
+            "example": "anna@example.com",
             "maxLength": 254,
             "title": "Email",
             "type": "string"
@@ -2109,12 +2237,14 @@
           "first_name": {
             "default": "",
             "maxLength": 150,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$",
             "title": "First Name",
             "type": "string"
           },
           "last_name": {
             "default": "",
             "maxLength": 150,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$",
             "title": "Last Name",
             "type": "string"
           }
@@ -2158,6 +2288,15 @@
           "email": {
             "anyOf": [
               {
+                "anyOf": [
+                  {
+                    "format": "email"
+                  },
+                  {
+                    "maxLength": 0
+                  }
+                ],
+                "example": "anna@example.com",
                 "maxLength": 254,
                 "type": "string"
               },
@@ -2171,6 +2310,7 @@
             "anyOf": [
               {
                 "maxLength": 150,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
                 "type": "string"
               },
               {
@@ -2183,6 +2323,7 @@
             "anyOf": [
               {
                 "maxLength": 150,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
                 "type": "string"
               },
               {
