@@ -48,37 +48,68 @@
 | Frontend | React 18, TypeScript, Vite, react-router |
 | Бот | Telegram Bot API (stdlib, без сторонних библиотек) |
 | Каналы и файлы | Django email (SMTP), [httpx](https://www.python-httpx.org/) (webhook), [Apprise](https://github.com/caronc/apprise) (другие сервисы), [icalendar](https://icalendar.readthedocs.io/) (`.ics`), [filetype](https://github.com/h2non/filetype.py) (тип файла по содержимому) |
-| Качество | ruff (линтер + форматтер), mypy `strict` с плагинами django и pydantic, pre-commit, Django TestCase |
+| БД | PostgreSQL 17 в Docker, SQLite при запуске без Docker |
+| Качество | ruff (линтер + форматтер), mypy `strict` с плагинами django и pydantic, pre-commit, Django TestCase, [Schemathesis](https://schemathesis.readthedocs.io/) (фаззинг API) |
 | Пакеты (backend) | [uv](https://docs.astral.sh/uv/) |
-| Запуск | Docker Compose: PostgreSQL 17, gunicorn, nginx |
+| Запуск | Docker Compose: PostgreSQL, gunicorn, nginx, Mailpit (SMTP) |
 
 ## Структура репозитория
 
 ```
 .
+├── compose.yaml              # весь стек: db, backend, reminders, frontend, mailpit
 ├── backend/                  # Django + django-ninja API
 │   ├── apps/users/           # пользователи, JWT-авторизация, управление пользователями
-│   ├── apps/payments/        # регулярные платежи, периоды, итоги, seed_demo
-│   ├── apps/notifications/   # Telegram: напоминания, кнопка «Оплачено», run_reminders
+│   ├── apps/payments/        # платежи, периоды, итоги, чеки и ссылки, экспорт .ics, seed_demo
+│   ├── apps/notifications/   # каналы напоминаний (Telegram, email, webhook, Apprise),
+│   │                         # кнопка «Оплачено», run_reminders, check_channels
+│   ├── Dockerfile            # образ backend (uv, gunicorn)
+│   ├── .env.example          # все переменные приложения без секретов
 │   └── openapi.json          # OpenAPI-спецификация
 ├── frontend/                 # React SPA (веб-панель)
-├── docs/API.md               # контракт API (back ↔ front)
+│   ├── Dockerfile            # сборка Vite → nginx
+│   └── nginx.conf.template   # SPA, прокси /api и /admin, статика админки
+├── docs/
+│   ├── API.md                # контракт API (back ↔ front)
+│   ├── BONUS_PLAN.md         # план и статус дополнительных возможностей
+│   └── CUSTOMER_QUESTIONS.md # что реализовано и вопросы заказчикам по ТЗ
 └── README.md
 ```
 
 ## Быстрый старт
 
-### Запуск в Docker (одной командой)
+### Запуск в Docker (рекомендуется)
 
-Нужен только Docker с Compose v2.
+Нужен только Docker с Compose v2 (на Windows и macOS — Docker Desktop).
 
-```bash
-cp backend/.env.example backend/.env   # заполнить SECRET_KEY, ADMIN_*, TELEGRAM_*
-docker compose up -d --build
-```
+1. Создайте файл настроек и заполните в нём `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` (не оставляйте `change-me`) и `TELEGRAM_*` — см. [«Подключение Telegram»](#подключение-telegram):
 
-- Панель — http://localhost:8080, админка — http://localhost:8080/admin/, Swagger — http://localhost:8080/api/v1/docs.
-- Демо-данные: `SEED_DEMO=1 docker compose up -d` (только при пустой базе) или `docker compose exec backend python manage.py seed_demo --reset`.
+   ```bash
+   cp backend/.env.example backend/.env
+   ```
+
+2. Соберите и запустите стек:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. Загрузите демо-данные (при пустой базе; `--reset` удаляет все платежи перед загрузкой):
+
+   ```bash
+   docker compose exec backend python manage.py seed_demo
+   ```
+
+| Что | Адрес |
+|---|---|
+| Панель | http://localhost:8080 |
+| Django-админка | http://localhost:8080/admin/ |
+| Swagger | http://localhost:8080/api/v1/docs |
+| Почта (Mailpit) | http://localhost:8025 |
+
+- Вход: администратор — `ADMIN_USERNAME` / `ADMIN_PASSWORD` из `backend/.env`, демо-пользователь — `user` / `user-pass-123`.
+- После правки `backend/.env` — `docker compose up -d`: контейнеры пересоздадутся с новыми настройками (данные в томах сохраняются). Администратор обновляется из `.env` при каждом старте backend.
+- Проверить каналы напоминаний (тестовое сообщение в Telegram и письмо в Mailpit): `docker compose exec backend python manage.py check_channels`.
 - Логи: `docker compose logs -f backend reminders`. Остановить: `docker compose down`; удалить ещё и данные: `docker compose down -v`.
 
 | Сервис | Что делает |
@@ -113,11 +144,38 @@ Email-напоминания в Docker работают сразу: почта �
 
 У контейнеров заданы лимиты CPU и памяти. Процессы работают от непривилегированного пользователя. Чеки лежат в томе `media` и наружу не раздаются — только через API с авторизацией.
 
-### Требования для запуска без Docker
+### Подключение Telegram
+
+1. Создайте бота у [@BotFather](https://t.me/BotFather) (`/newbot`) и запишите токен в `TELEGRAM_BOT_TOKEN` в `backend/.env`.
+2. Выберите чат для напоминаний:
+   - группа команды — добавьте бота в группу и отправьте в ней `/start@<имя_бота>`;
+   - личный чат — откройте бота в Telegram и нажмите «Запустить».
+3. Узнайте id чата: откройте `https://api.telegram.org/bot<TOKEN>/getUpdates` и возьмите `chat.id` (у групп он отрицательный, `-100…`). Процесс напоминаний сам читает обновления бота, поэтому на это время остановите его — иначе ответ будет пустым:
+
+   ```bash
+   docker compose stop reminders
+   ```
+
+   Без Docker — остановите `run_reminders` (Ctrl+C).
+4. Запишите id в `TELEGRAM_CHAT_ID`, примените настройки и отправьте тестовое сообщение:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   ```bash
+   docker compose exec backend python manage.py check_channels
+   ```
+
+Кнопка «✅ Оплачено» работает в группе и в личном чате; в группе отключать privacy mode у бота не нужно. Без токена и чата всё, кроме отправки сообщений, работает.
+
+### Запуск без Docker
+
+Требования:
 
 - Python 3.14+ и [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Node.js 20+ и npm
-- Токен Telegram-бота (от [@BotFather](https://t.me/BotFather)) и id чата, куда слать напоминания
+- Токен Telegram-бота и id чата — см. [«Подключение Telegram»](#подключение-telegram)
 
 ### 1. Переменные окружения
 
@@ -161,7 +219,7 @@ cp backend/.env.example backend/.env
 | `ATTACHMENT_MAX_MB` | Максимальный размер чека, МБ | `10` |
 | `LOG_FILE` | Файл логов с ротацией; пусто — только консоль | `logs/app.log` |
 
-Как узнать `TELEGRAM_CHAT_ID`: добавьте бота в чат, напишите в чат любое сообщение и откройте `https://api.telegram.org/bot<TOKEN>/getUpdates` — id чата в поле `chat.id` (у групп он отрицательный). Без токена и чата всё, кроме отправки сообщений, работает.
+Без Docker `PANEL_URL` — `http://localhost:5173` (адрес Vite). В Docker Compose сам подставляет PostgreSQL, Mailpit и `DEBUG=False`, поэтому один и тот же `backend/.env` подходит для обоих способов запуска.
 
 > В `.env.example` нет реальных секретов. Не коммитьте `.env`.
 
@@ -236,7 +294,7 @@ npm run dev
 
 Панель откроется на http://localhost:5173. Vite проксирует `/api` на `http://127.0.0.1:8000`, поэтому фронт и API работают на одном origin (refresh-cookie `SameSite=Strict`).
 
-Сборка для продакшена: `npm run build` → статические файлы в `frontend/dist/`; nginx отдаёт SPA (`try_files $uri /index.html`) и проксирует `/api` на Django.
+Сборка для продакшена: `npm run build` → статические файлы в `frontend/dist/`. Готовая конфигурация nginx (SPA, прокси `/api` и `/admin`) — [`frontend/nginx.conf.template`](frontend/nginx.conf.template), она же используется в Docker.
 
 ## Разработка
 
@@ -257,10 +315,12 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy . && uv run m
 cd ../frontend && npm run typecheck
 ```
 
+Фаззинг API по OpenAPI-схеме: `just fuzz` (нужны запущенный сервер и `TOKEN=<access-токен>`; фаззер создаёт и удаляет данные — запускать на копии БД). Бизнес-ограничения, которые схема выразить не может, описаны в [`backend/schemathesis.toml`](backend/schemathesis.toml).
+
 ## API
 
 Все эндпоинты используют префикс `/api/v1`. Полный контракт с примерами — [docs/API.md](docs/API.md).
-Спецификация OpenAPI лежит в [`backend/openapi.json`](backend/openapi.json), Swagger — http://localhost:8000/api/v1/docs (кнопка **Authorize** → access-токен из ответа `auth/login`). Перегенерировать: `just openapi`.
+Спецификация OpenAPI лежит в [`backend/openapi.json`](backend/openapi.json). Swagger — http://localhost:8080/api/v1/docs в Docker или http://localhost:8000/api/v1/docs без Docker (кнопка **Authorize** → access-токен из ответа `auth/login`). Перегенерировать спецификацию: `just openapi`.
 
 ### Авторизация
 
@@ -323,9 +383,19 @@ cd ../frontend && npm run typecheck
 
 ## Сценарий демонстрации
 
-Подготовка: `seed_demo --reset`, запущены backend, `run_reminders` и frontend.
+Подготовка в Docker (без Docker — то же самое с запущенными backend, `run_reminders` и frontend, адрес панели http://localhost:5173):
 
-1. Войти администратором (`ADMIN_USERNAME` / `ADMIN_PASSWORD` из `.env`).
+```bash
+docker compose up -d
+```
+
+```bash
+docker compose exec backend python manage.py seed_demo --reset
+```
+
+Панель — http://localhost:8080, почта — http://localhost:8025.
+
+1. Войти администратором (`ADMIN_USERNAME` / `ADMIN_PASSWORD` из `backend/.env`).
 2. «Регулярные платежи» → «Добавить платёж» со сроком через 1–3 дня.
 3. Напоминание приходит в Telegram сразу (до срока меньше 3 дней); «Сервер» из демо-данных приходит при первой проверке.
 4. Выйти, войти пользователем `user` / `user-pass-123` — кнопок добавления и удаления и раздела «Пользователи» нет (API отвечает 403). Нажать «Оплачено» у периода или «✅ Оплачено» в Telegram.
@@ -337,4 +407,7 @@ cd ../frontend && npm run typecheck
 
 8. «📎» у оплаченного периода аренды — ссылка «Платёжное поручение» из демо-данных; перетащить PDF или фото чека, скачать, удалить.
 9. «Календарь» → «📅 Экспорт .ics» → открыть файл: сроки появятся в календаре с оповещением за 3 дня.
-10. С настроенным email / webhook — `check_channels`, затем напоминание по «Серверу» приходит во все каналы; в строке периода — «🔔 напомнили … · Telegram, Email, Webhook».
+10. Напоминание по «Серверу» приходит и в Telegram, и письмом в Mailpit (http://localhost:8025, во вложении `.ics`); в строке периода — «🔔 напомнили … · Telegram, Email». Для email нужен получатель в `backend/.env`: `REMINDER_EMAIL_TO` или `REMINDER_EMAIL_TO_USERS=true`.
+11. Django-админка (http://localhost:8080/admin/): дашборд, история изменений, журнал доставки напоминаний, чеки и ссылки.
+
+Вопросы к ТЗ и принятые решения по неоднозначным местам — [docs/CUSTOMER_QUESTIONS.md](docs/CUSTOMER_QUESTIONS.md).
