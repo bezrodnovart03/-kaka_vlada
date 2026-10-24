@@ -1,0 +1,41 @@
+# Прод на одном сервере (VPS): поверх compose.yaml добавляет HTTPS через Caddy.
+#
+#   cp deploy/.env.prod.example .env          # DOMAIN, пароль БД и т.д.
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+#
+# Наружу открыты только 80/443 (Caddy). Панель nginx и веб-интерфейс Mailpit слушают
+# лишь 127.0.0.1 — Mailpit смотреть через SSH-туннель: ssh -L 8025:127.0.0.1:8025 <сервер>.
+# Нужен Docker Compose 2.24+ (тег !override).
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?задайте DOMAIN в .env рядом с compose.yaml}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  frontend:
+    ports: !override
+      - "127.0.0.1:${APP_PORT:-8080}:80"
+
+  mailpit:
+    ports: !override
+      - "127.0.0.1:${MAILPIT_PORT:-8025}:8025"
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -113,6 +113,10 @@ Email-напоминания в Docker работают сразу: почта �
 
 У контейнеров заданы лимиты CPU и памяти. Процессы работают от непривилегированного пользователя. Чеки лежат в томе `media` и наружу не раздаются — только через API с авторизацией.
 
+### Деплой
+
+Бесплатно на Render.com (`render.yaml`, без банковской карты) или на своём сервере с HTTPS (`compose.prod.yaml`) — см. [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ### Требования для запуска без Docker
 
 - Python 3.14+ и [uv](https://docs.astral.sh/uv/getting-started/installation/)

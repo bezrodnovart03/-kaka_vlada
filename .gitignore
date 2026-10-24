@@ -1,0 +1,3 @@
+# Параметры Compose с секретами (POSTGRES_PASSWORD, DOMAIN…) — только на сервере.
+.env
+.DS_Store
