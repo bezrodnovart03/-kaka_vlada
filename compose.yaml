@@ -10,11 +10,13 @@
 #   backend    Django + gunicorn; при старте — migrate (и админ из .env) и collectstatic
 #   reminders  run_reminders: напоминания во все каналы и кнопка «Оплачено» в Telegram
 #   frontend   nginx: React-панель, прокси /api и /admin, статика админки
-#   mailpit    (профиль mail) SMTP-ловушка для проверки email: http://localhost:8025
+#   mailpit    SMTP-сервер стека: принимает всю почту приложения, письма видны
+#              на http://localhost:8025 и наружу не уходят; хранятся в томе mailpit
 #
 # Переменные приложения — из backend/.env (тот же файл, что и при запуске без Docker).
-# Ниже переопределяется только то, что в контейнере должно быть другим: БД, пути, DEBUG.
+# Ниже переопределяется только то, что в контейнере должно быть другим: БД, SMTP, пути, DEBUG.
 # Переменные вида ${VAR:-default} можно задать в .env рядом с этим файлом или в окружении.
+# Получатели email-напоминаний — REMINDER_EMAIL_TO / REMINDER_EMAIL_TO_USERS в backend/.env.
 
 name: invoice-keeper
 
@@ -32,6 +34,15 @@ x-backend-env: &backend-env
   DB_USER: ${POSTGRES_USER:-invoice_keeper}
   DB_PASSWORD: ${POSTGRES_PASSWORD:-invoice_keeper}
   MEDIA_ROOT: media
+  # Почта уходит в Mailpit. Настоящий SMTP (Яндекс, Gmail…) — задать EMAIL_HOST, EMAIL_PORT,
+  # EMAIL_USE_TLS/SSL, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD в .env рядом с compose.yaml.
+  EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+  EMAIL_PORT: ${EMAIL_PORT:-1025}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-false}
+  EMAIL_USE_SSL: ${EMAIL_USE_SSL:-false}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  EMAIL_FROM: ${EMAIL_FROM:-Invoice Keeper <noreply@invoice-keeper.local>}
 
 x-backend: &backend
   build:
@@ -76,6 +87,8 @@ services:
       - static:/app/staticfiles
     depends_on:
       db:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     healthcheck:
       test:
@@ -130,12 +143,17 @@ services:
       resources:
         limits: { cpus: "0.5", memory: 64M }
 
-  # docker compose --profile mail up -d
-  # В backend/.env: EMAIL_HOST=mailpit, EMAIL_PORT=1025, EMAIL_USE_TLS=false,
-  # REMINDER_EMAIL_TO=["team@example.com"]
+  # SMTP-сервер стека (порт 1025 — только внутри сети compose) и веб-интерфейс почты.
   mailpit:
     image: axllent/mailpit:v1.27
-    profiles: ["mail"]
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "1000"
+      # Если в приложении заданы логин/пароль SMTP — принимать их без TLS.
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    volumes:
+      - mailpit:/data
     ports:
       - "${MAILPIT_PORT:-8025}:8025"
     restart: unless-stopped
@@ -147,3 +165,4 @@ volumes:
   pgdata:
   media:
   static:
+  mailpit:

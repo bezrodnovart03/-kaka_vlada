@@ -87,9 +87,9 @@ docker compose up -d --build
 | `backend` | Django + gunicorn; при старте `migrate` (админ из `.env`) и `collectstatic` |
 | `reminders` | `run_reminders`: напоминания во все каналы и кнопка «Оплачено» в Telegram |
 | `frontend` | nginx: React-панель, прокси `/api` и `/admin`, статика админки |
-| `mailpit` | профиль `mail`: SMTP-ловушка, письма на http://localhost:8025 |
+| `mailpit` | SMTP-сервер стека: принимает всю почту приложения, письма видны на http://localhost:8025 и наружу не уходят (хранятся в томе `mailpit`) |
 
-Переменные приложения берутся из `backend/.env`. Compose в контейнерах переопределяет БД (PostgreSQL), `DEBUG=False` и пути. Параметры самого Compose задаются в окружении или в файле `.env` рядом с `compose.yaml`:
+Переменные приложения берутся из `backend/.env`. Compose в контейнерах переопределяет БД (PostgreSQL), SMTP (Mailpit), `DEBUG=False` и пути. Параметры самого Compose задаются в окружении или в файле `.env` рядом с `compose.yaml`:
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
@@ -103,8 +103,13 @@ docker compose up -d --build
 | `GUNICORN_WORKERS` | `2` | Процессы gunicorn |
 | `CLIENT_MAX_BODY_SIZE` | `12m` | Лимит тела запроса в nginx (чеки до `ATTACHMENT_MAX_MB`) |
 | `BACKEND_ENV_FILE` | `backend/.env` | Другой env-файл приложения |
+| `MAILPIT_PORT` | `8025` | Порт веб-интерфейса почты на хосте |
+| `EMAIL_HOST` / `EMAIL_PORT` | `mailpit` / `1025` | SMTP для контейнеров; задайте, чтобы слать через настоящий сервер |
+| `EMAIL_USE_TLS` / `EMAIL_USE_SSL` | `false` / `false` | Шифрование SMTP |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | пусто | Логин и пароль SMTP |
+| `EMAIL_FROM` | `Invoice Keeper <noreply@invoice-keeper.local>` | Отправитель |
 
-Email без настоящего SMTP: `docker compose --profile mail up -d`, а в `backend/.env` — `EMAIL_HOST=mailpit`, `EMAIL_PORT=1025`, `EMAIL_USE_TLS=false`, `REMINDER_EMAIL_TO=["team@example.com"]`.
+Email-напоминания в Docker работают сразу: почта идёт в Mailpit. Включаются они получателями в `backend/.env`: `REMINDER_EMAIL_TO=["team@example.com"]` и/или `REMINDER_EMAIL_TO_USERS=true` (email активных пользователей). Проверка: `docker compose exec backend python manage.py check_channels` — тестовое письмо появится на http://localhost:8025. Чтобы письма уходили на настоящие ящики, задайте `EMAIL_*` из таблицы, например для Яндекса: `EMAIL_HOST=smtp.yandex.ru`, `EMAIL_PORT=465`, `EMAIL_USE_SSL=true`, логин и пароль приложения.
 
 У контейнеров заданы лимиты CPU и памяти. Процессы работают от непривилегированного пользователя. Чеки лежат в томе `media` и наружу не раздаются — только через API с авторизацией.
 
