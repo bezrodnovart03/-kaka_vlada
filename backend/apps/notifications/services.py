@@ -1,9 +1,10 @@
 """
-Напоминания о сроках оплаты в Telegram-чат.
+Напоминания о сроках оплаты: Telegram-чат и дополнительные каналы (email, webhook, Apprise).
 
 Правила (кейс, стр. 7–8, 10):
 - минимум за REMINDER_DAYS_BEFORE (3) дня до срока: название, сумма, валюта, дата;
-- без дублей: период «захватывается» атомарным UPDATE ... WHERE reminder_sent_at IS NULL,
+- без дублей: период «захватывается» атомарным UPDATE ... WHERE reminder_sent_at IS NULL
+  (Telegram) или INSERT в ReminderDelivery с уникальностью (период, канал) — остальные каналы,
   поэтому повторная проверка или параллельный процесс второе сообщение не отправят;
 - оплаченный период и удалённый платёж напоминаний не вызывают;
 - платёж добавлен позже, чем за 3 дня до срока, — напоминание сразу.
@@ -14,11 +15,10 @@ import logging
 import threading
 from collections.abc import Callable
 from datetime import date, timedelta
-from decimal import Decimal
 from typing import Any
 
 from django.conf import settings
-from django.db import connection
+from django.db import IntegrityError, connection, transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -26,26 +26,13 @@ from apps.core.schemas import local_today
 from apps.payments import services as payment_services
 from apps.payments.models import OccurrenceStatus, PaymentOccurrence
 
-from . import telegram
+from . import channels, telegram
+from .formatting import format_due, format_money
+from .models import Channel, ReminderDelivery
 
 logger = logging.getLogger("apps.notifications")
 
 PAY_CALLBACK_PREFIX = "paid:"
-
-CURRENCY_SIGNS = {"RUB": "₽", "USD": "$", "EUR": "€"}
-
-
-def format_money(amount: Decimal, currency: str) -> str:
-    whole, _, cents = f"{amount:,.2f}".partition(".")
-    return f"{whole.replace(',', ' ')},{cents} {CURRENCY_SIGNS.get(currency, '')} {currency}"
-
-
-def format_due(due_date: date, today: date) -> str:
-    days = (due_date - today).days
-    when = {0: "сегодня", 1: "завтра"}.get(days)
-    if when is None:
-        when = f"через {days} дн." if days > 0 else f"просрочено на {-days} дн."
-    return f"{due_date:%d.%m.%Y} ({when})"
 
 
 def reminder_text(occurrence: PaymentOccurrence, today: date) -> str:
@@ -74,15 +61,23 @@ def pay_keyboard(occurrence: PaymentOccurrence) -> dict[str, Any] | None:
     }
 
 
-def due_for_reminder(today: date) -> QuerySet[PaymentOccurrence]:
+def reminder_window(today: date) -> QuerySet[PaymentOccurrence]:
     """Неоплаченные периоды активных платежей со сроком в окне [сегодня; сегодня + N]."""
     return PaymentOccurrence.objects.filter(
         status=OccurrenceStatus.UNPAID,
-        reminder_sent_at__isnull=True,
         recurring_payment__deleted_at__isnull=True,
         due_date__gte=today,
         due_date__lte=today + timedelta(days=settings.REMINDER_DAYS_BEFORE),
     ).select_related("recurring_payment")
+
+
+def due_for_reminder(today: date) -> QuerySet[PaymentOccurrence]:
+    """Периоды окна, по которым ещё не было напоминания в Telegram."""
+    return reminder_window(today).filter(reminder_sent_at__isnull=True)
+
+
+def any_channel_configured() -> bool:
+    return telegram.is_configured() or bool(channels.configured_channels())
 
 
 def _claim(occurrence: PaymentOccurrence) -> bool:
@@ -103,11 +98,79 @@ def _release(occurrence: PaymentOccurrence) -> None:
 def send_due_reminders(
     today: date | None = None, *, recurring_payment_id: int | None = None
 ) -> int:
-    """Отправляет все положенные напоминания. Возвращает число отправленных сообщений."""
-    if not telegram.is_configured():
-        logger.debug("Telegram не настроен — напоминания пропущены")
-        return 0
+    """
+    Отправляет все положенные напоминания во все настроенные каналы.
+    Возвращает число отправленных сообщений (период × канал).
+    """
     today = today or local_today()
+    sent = 0
+    if telegram.is_configured():
+        sent += _send_telegram(today, recurring_payment_id)
+    else:
+        logger.debug("Telegram не настроен — пропущен")
+    for channel in channels.configured_channels():
+        sent += _send_to_channel(channel, today, recurring_payment_id)
+    return sent
+
+
+def _claim_delivery(occurrence: PaymentOccurrence, channel: Channel) -> ReminderDelivery | None:
+    """
+    Захват напоминания в канале: INSERT с уникальностью (период, канал).
+    None — уже отправлено (или отправляется) другим процессом либо период успели оплатить.
+    """
+    try:
+        with transaction.atomic():
+            delivery = ReminderDelivery.objects.create(occurrence=occurrence, channel=channel)
+    except IntegrityError:
+        return None
+    # Период могли оплатить или платёж удалить между выборкой и захватом.
+    still_due = PaymentOccurrence.objects.filter(
+        pk=occurrence.pk,
+        status=OccurrenceStatus.UNPAID,
+        recurring_payment__deleted_at__isnull=True,
+    ).exists()
+    if not still_due:
+        delivery.delete()
+        return None
+    return delivery
+
+
+def _send_to_channel(
+    channel: channels.ReminderChannel, today: date, recurring_payment_id: int | None
+) -> int:
+    queryset = reminder_window(today).exclude(reminder_deliveries__channel=channel.channel)
+    if recurring_payment_id is not None:
+        queryset = queryset.filter(recurring_payment_id=recurring_payment_id)
+
+    sent = 0
+    for occurrence in queryset.order_by("due_date", "id"):
+        delivery = _claim_delivery(occurrence, channel.channel)
+        if delivery is None:
+            continue
+        try:
+            channel.send(channels.Reminder(occurrence, today))
+        except Exception:
+            # Не ушло — снимаем захват, следующая проверка попробует снова.
+            # Ловим всё: сбой одного канала не должен мешать остальным.
+            delivery.delete()
+            logger.exception(
+                "Не удалось отправить напоминание (%s) по периоду %s",
+                channel.channel,
+                occurrence.id,
+            )
+            continue
+        sent += 1
+        logger.info(
+            "Напоминание отправлено (%s): период %s (%s, срок %s)",
+            channel.channel,
+            occurrence.id,
+            occurrence.recurring_payment.title,
+            occurrence.due_date,
+        )
+    return sent
+
+
+def _send_telegram(today: date, recurring_payment_id: int | None) -> int:
     queryset = due_for_reminder(today)
     if recurring_payment_id is not None:
         queryset = queryset.filter(recurring_payment_id=recurring_payment_id)
@@ -143,7 +206,7 @@ def send_due_reminders_in_background(today: date, *, recurring_payment_id: int) 
     Если поток не отправит (сеть, остановка процесса), run_reminders дошлёт
     на следующей проверке: отметка reminder_sent_at снимается при ошибке отправки.
     """
-    if not telegram.is_configured():
+    if not any_channel_configured():
         return
 
     def send() -> None:

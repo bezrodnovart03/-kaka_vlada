@@ -98,7 +98,35 @@ export interface PaymentOccurrenceOut {
   overdue_days: number;
   marked_by: UserBrief | null;
   marked_at: ISODateTime | null;
-  reminder_sent_at: ISODateTime | null;
+  reminder_sent_at: ISODateTime | null;  // Telegram
+  reminders: ReminderOut[];              // все каналы, включая Telegram
+  attachments_count: number;
+}
+
+export type ReminderChannel = 'telegram' | 'email' | 'webhook' | 'apprise';
+export interface ReminderOut { channel: ReminderChannel; sent_at: ISODateTime; }
+
+// ── чеки и ссылки к оплате ─────────────────────────────
+export type AttachmentKind = 'file' | 'link';
+
+export interface AttachmentOut {
+  id: number;
+  kind: AttachmentKind;
+  name: string;
+  url: string | null;        // только у ссылки
+  content_type: string;      // у файла — по содержимому: application/pdf, image/png…
+  size: number | null;
+  uploaded_by: UserBrief | null;
+  created_at: ISODateTime;
+}
+
+export interface AttachmentLinkIn { url: string; name?: string; }
+
+export interface CalendarQuery {
+  currency?: Currency;
+  state?: OccurrenceState;
+  due_from?: ISODate;
+  due_to?: ISODate;
 }
 
 export type PaymentOccurrencePatchIn =

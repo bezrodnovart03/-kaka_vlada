@@ -1,4 +1,4 @@
-import type { Currency, ISODate, Money, Period } from './api/types';
+import type { Currency, ISODate, Money, Period, ReminderChannel } from './api/types';
 
 // Арифметику с деньгами фронт не делает — только форматирование (docs/API.md §1).
 const money = new Map<string, Intl.NumberFormat>();
@@ -36,6 +36,13 @@ export const PERIOD_LABEL: Record<Period, string> = {
 };
 
 export const CURRENCIES: Currency[] = ['RUB', 'USD', 'EUR'];
+
+export const CHANNEL_LABEL: Record<ReminderChannel, string> = {
+  telegram: 'Telegram',
+  email: 'Email',
+  webhook: 'Webhook',
+  apprise: 'другие каналы',
+};
 
 export function plural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10;

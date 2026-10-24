@@ -5,12 +5,16 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "apprise>=2.0.1",
     "django>=6.0,<6.1",
     "django-ninja>=1.7.1",
     "django-ninja-jwt>=5.4.5",
     "django-simple-history>=3.13.0",
     "django-stubs-ext>=6.1.2",
     "django-unfold>=0.110.0",
+    "filetype>=1.2.0",
+    "httpx>=0.28.1",
+    "icalendar>=7.3.0",
     "pydantic-settings>=2.16.1",
 ]
 

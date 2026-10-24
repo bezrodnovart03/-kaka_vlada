@@ -221,3 +221,9 @@ __marimo__/
 
 # Schemathesis (кэш примеров)
 .schemathesis/
+
+# Чеки к оплатам и логи
+media/
+.test-media/
+logs/
+*.log

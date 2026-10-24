@@ -13,7 +13,7 @@ from unfold.decorators import display
 from apps.core.schemas import local_today
 
 from . import services
-from .models import PaymentOccurrence, RecurringPayment
+from .models import PaymentAttachment, PaymentOccurrence, RecurringPayment
 
 CURRENCY_SIGNS = {"RUB": "₽", "USD": "$", "EUR": "€"}
 
@@ -131,6 +131,46 @@ class RecurringPaymentAdmin(SimpleHistoryAdmin, ModelAdmin):  # type: ignore[mis
         return False
 
 
+class AttachmentInline(TabularInline):  # type: ignore[misc]
+    model = PaymentAttachment
+    extra = 0
+    fields = ("kind", "name", "file", "url", "uploaded_by", "created_at")
+    readonly_fields = fields
+    can_delete = False
+
+    def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        # Добавлять — через панель: там проверяются тип и размер файла.
+        return False
+
+
+@admin.register(PaymentAttachment)
+class PaymentAttachmentAdmin(ModelAdmin):  # type: ignore[misc]
+    list_display = ("name", "kind", "display_occurrence", "uploaded_by", "created_at")
+    list_filter = (("kind", ChoicesDropdownFilter),)
+    list_filter_submit = True
+    search_fields = ("name", "url", "occurrence__recurring_payment__title")
+    list_select_related = ("occurrence__recurring_payment", "uploaded_by")
+    readonly_fields = (
+        "occurrence",
+        "kind",
+        "file",
+        "url",
+        "name",
+        "content_type",
+        "size",
+        "uploaded_by",
+        "created_at",
+    )
+
+    @display(description=_("Период"), ordering="occurrence__due_date")
+    def display_occurrence(self, obj: PaymentAttachment) -> str:
+        occurrence = obj.occurrence
+        return f"{occurrence.recurring_payment.title} — {occurrence.due_date:%d.%m.%Y}"
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+
 @admin.register(PaymentOccurrence)
 class PaymentOccurrenceAdmin(SimpleHistoryAdmin, ModelAdmin):  # type: ignore[misc]
     list_display = (
@@ -166,6 +206,7 @@ class PaymentOccurrenceAdmin(SimpleHistoryAdmin, ModelAdmin):  # type: ignore[mi
         (_("Оплата"), {"fields": ("status", "paid_at", "marked_by", "marked_at")}),
         (_("Служебное"), {"fields": ("reminder_sent_at", "created_at")}),
     )
+    inlines = [AttachmentInline]
 
     @display(description=_("Платёж"), header=True, ordering="recurring_payment__title")
     def display_payment(self, obj: PaymentOccurrence) -> list[str]:

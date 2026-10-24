@@ -19,3 +19,19 @@ checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404",
 # paid_at не может быть в будущем; исправление даты у неоплаченного — 409.
 include-name = "PATCH /api/v1/payment-occurrences/{occurrence_id}"
 checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "409", "422"]
+
+[[operations]]
+# due_from не позже due_to, диапазон не длиннее 1098 дней.
+include-name = "GET /api/v1/payment-occurrences/calendar.ics"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "422"]
+
+[[operations]]
+# Тип файла проверяется по содержимому (PDF, PNG, JPEG, WebP, HEIC), пустой файл — 422,
+# больше 20 вложений на период — 409.
+include-name = "POST /api/v1/payment-occurrences/{occurrence_id}/attachments/file"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "409", "422"]
+
+[[operations]]
+# Только http(s)-ссылки с корректным адресом; больше 20 вложений на период — 409.
+include-name = "POST /api/v1/payment-occurrences/{occurrence_id}/attachments/link"
+checks.positive_data_acceptance.expected-statuses = ["2xx", "401", "403", "404", "409", "422"]

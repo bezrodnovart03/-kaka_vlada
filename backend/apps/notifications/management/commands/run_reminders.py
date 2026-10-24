@@ -5,7 +5,7 @@ from typing import Any
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandParser
 
-from apps.notifications import services, telegram
+from apps.notifications import channels, services, telegram
 
 logger = logging.getLogger("apps.notifications")
 
@@ -23,9 +23,12 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         if not telegram.is_configured():
-            self.stderr.write(
-                "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID не заданы в .env — сообщения не уйдут."
-            )
+            self.stderr.write("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID не заданы в .env.")
+        extra = [channel.channel.label for channel in channels.configured_channels()]
+        if extra:
+            self.stdout.write(f"Дополнительные каналы: {', '.join(map(str, extra))}")
+        if not services.any_channel_configured():
+            self.stderr.write("Ни один канал напоминаний не настроен — сообщения не уйдут.")
         if options["once"]:
             sent = services.run_check()
             self.stdout.write(f"Отправлено напоминаний: {sent}")

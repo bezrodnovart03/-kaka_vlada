@@ -642,6 +642,133 @@
         ]
       }
     },
+    "/api/v1/payment-occurrences/calendar.ics": {
+      "get": {
+        "operationId": "apps_payments_api_export_calendar",
+        "summary": "Экспорт периодов в календарь (iCalendar .ics)",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "currency",
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/Currency"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "unpaid",
+                    "paid",
+                    "overdue",
+                    "upcoming"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            },
+            "required": false
+          },
+          {
+            "in": "query",
+            "name": "due_from",
+            "schema": {
+              "anyOf": [
+                {
+                  "example": "2026-10-23",
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "По умолчанию — 3 месяца назад",
+              "title": "Due From"
+            },
+            "required": false,
+            "description": "По умолчанию — 3 месяца назад"
+          },
+          {
+            "in": "query",
+            "name": "due_to",
+            "schema": {
+              "anyOf": [
+                {
+                  "example": "2026-10-23",
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "По умолчанию — через 12 месяцев",
+              "title": "Due To"
+            },
+            "required": false,
+            "description": "По умолчанию — через 12 месяцев"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Файл .ics",
+            "content": {
+              "text/calendar": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "description": "События на весь день срока с оповещением за REMINDER_DAYS_BEFORE дней. Кроме созданных периодов — будущие сроки активных платежей по расписанию. По умолчанию — от 3 месяцев назад до 12 месяцев вперёд; диапазон длиннее 1098 дней — 422.",
+        "tags": [
+          "payment-occurrences"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
     "/api/v1/payment-occurrences/{occurrence_id}": {
       "get": {
         "operationId": "apps_payments_api_get_occurrence",
@@ -788,6 +915,461 @@
           },
           "required": true
         },
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payment-occurrences/{occurrence_id}/attachments": {
+      "get": {
+        "operationId": "apps_payments_api_list_attachments",
+        "summary": "Чеки и ссылки периода",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "occurrence_id",
+            "schema": {
+              "title": "Occurrence Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AttachmentOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "payment-occurrences"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payment-occurrences/{occurrence_id}/attachments/file": {
+      "post": {
+        "operationId": "apps_payments_api_upload_attachment",
+        "summary": "Прикрепить чек (файл)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "occurrence_id",
+            "schema": {
+              "title": "Occurrence Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "multipart/form-data, поле `file`. Форматы: PDF, PNG, JPEG, WebP, HEIC — тип определяется по содержимому файла. Размер — до ATTACHMENT_MAX_MB (по умолчанию 10 МБ). Не больше 20 вложений на период (409).",
+        "tags": [
+          "payment-occurrences"
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "title": "File",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "title": "FileParams",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payment-occurrences/{occurrence_id}/attachments/link": {
+      "post": {
+        "operationId": "apps_payments_api_add_link_attachment",
+        "summary": "Прикрепить ссылку (на чек, платёжку, счёт)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "occurrence_id",
+            "schema": {
+              "title": "Occurrence Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "description": "Только http:// и https:// (иначе 422). Не больше 20 вложений на период (409).",
+        "tags": [
+          "payment-occurrences"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentLinkIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payment-occurrences/{occurrence_id}/attachments/{attachment_id}/download": {
+      "get": {
+        "operationId": "apps_payments_api_download_attachment",
+        "summary": "Скачать прикреплённый файл",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "occurrence_id",
+            "schema": {
+              "title": "Occurrence Id",
+              "type": "integer"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "schema": {
+              "title": "Attachment Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Файл чека",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/heic": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "description": "У вложения-ссылки файла нет — 409.",
+        "tags": [
+          "payment-occurrences"
+        ],
+        "security": [
+          {
+            "UserJWTAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/payment-occurrences/{occurrence_id}/attachments/{attachment_id}": {
+      "delete": {
+        "operationId": "apps_payments_api_delete_attachment",
+        "summary": "Удалить чек или ссылку (автор или админ)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "occurrence_id",
+            "schema": {
+              "title": "Occurrence Id",
+              "type": "integer"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "schema": {
+              "title": "Attachment Id",
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "payment-occurrences"
+        ],
         "security": [
           {
             "UserJWTAuth": []
@@ -1882,7 +2464,21 @@
                 "type": "null"
               }
             ],
+            "description": "Напоминание в Telegram",
             "title": "Reminder Sent At"
+          },
+          "reminders": {
+            "description": "Напоминания по всем каналам",
+            "items": {
+              "$ref": "#/components/schemas/ReminderOut"
+            },
+            "title": "Reminders",
+            "type": "array"
+          },
+          "attachments_count": {
+            "description": "Число прикреплённых чеков и ссылок",
+            "title": "Attachments Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -1897,7 +2493,9 @@
           "overdue_days",
           "marked_by",
           "marked_at",
-          "reminder_sent_at"
+          "reminder_sent_at",
+          "reminders",
+          "attachments_count"
         ],
         "title": "PaymentOccurrenceOut",
         "type": "object"
@@ -1923,6 +2521,92 @@
           "is_active"
         ],
         "title": "RecurringPaymentBrief",
+        "type": "object"
+      },
+      "ReminderOut": {
+        "properties": {
+          "channel": {
+            "enum": [
+              "telegram",
+              "email",
+              "webhook",
+              "apprise"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "sent_at": {
+            "format": "date-time",
+            "title": "Sent At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "sent_at"
+        ],
+        "title": "ReminderOut",
+        "type": "object"
+      },
+      "CalendarQuery": {
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Currency"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unpaid",
+                  "paid",
+                  "overdue",
+                  "upcoming"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "due_from": {
+            "anyOf": [
+              {
+                "example": "2026-10-23",
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "По умолчанию — 3 месяца назад",
+            "title": "Due From"
+          },
+          "due_to": {
+            "anyOf": [
+              {
+                "example": "2026-10-23",
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "По умолчанию — через 12 месяцев",
+            "title": "Due To"
+          }
+        },
+        "title": "CalendarQuery",
         "type": "object"
       },
       "PaymentOccurrencePatchIn": {
@@ -1975,6 +2659,117 @@
           }
         ],
         "title": "PaymentOccurrencePatchIn"
+      },
+      "AttachmentKind": {
+        "enum": [
+          "file",
+          "link"
+        ],
+        "title": "AttachmentKind",
+        "type": "string"
+      },
+      "AttachmentOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AttachmentKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Для ссылки — адрес; для файла — null",
+            "title": "Url"
+          },
+          "content_type": {
+            "description": "Для файла — тип по содержимому; для ссылки — пусто",
+            "title": "Content Type",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "uploaded_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "url",
+          "content_type",
+          "size",
+          "uploaded_by",
+          "created_at"
+        ],
+        "title": "AttachmentOut",
+        "type": "object"
+      },
+      "AttachmentLinkIn": {
+        "properties": {
+          "url": {
+            "examples": [
+              "https://example.com/receipt"
+            ],
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+            "title": "Url",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "pattern": "^[^\\x00-\\x1f\\x7f]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "По умолчанию — сама ссылка",
+            "title": "Name"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "AttachmentLinkIn",
+        "type": "object"
       },
       "SummaryQuery": {
         "properties": {

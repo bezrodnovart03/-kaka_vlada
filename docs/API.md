@@ -18,6 +18,7 @@
 7. [Пользователи](#7-пользователи)
 8. [Матрица прав](#8-матрица-прав)
 9. [TypeScript-типы целиком](#9-typescript-типы-целиком)
+10. [Дополнительно: чеки, календарь, каналы](#10-дополнительно-чеки-календарь-каналы)
 
 ---
 
@@ -439,7 +440,12 @@ GET /api/v1/payment-occurrences?state=overdue&ordering=due_date&page=1
       "overdue_days": 27,
       "marked_by": null,
       "marked_at": null,
-      "reminder_sent_at": "2026-09-23T09:00:12+03:00"
+      "reminder_sent_at": "2026-09-23T09:00:12+03:00",
+      "reminders": [
+        { "channel": "telegram", "sent_at": "2026-09-23T09:00:12+03:00" },
+        { "channel": "webhook", "sent_at": "2026-09-23T09:00:13+03:00" }
+      ],
+      "attachments_count": 1
     }
   ],
   "count": 1
@@ -453,6 +459,8 @@ GET /api/v1/payment-occurrences?state=overdue&ordering=due_date&page=1
 | `overdue_days` | `max(0, (paid_at или сегодня) − due_date)` |
 | `marked_by` | кто последним менял статус; `null`, если никто или пользователь удалён |
 | `reminder_sent_at` | когда ушло напоминание в Telegram, `null` — не отправлялось |
+| `reminders` | напоминания по всем каналам (`telegram`, `email`, `webhook`, `apprise`) со временем отправки |
+| `attachments_count` | сколько чеков и ссылок прикреплено к периоду (§10) |
 
 **Ошибки:** 422.
 
@@ -516,7 +524,12 @@ GET /api/v1/payment-occurrences?state=overdue&ordering=due_date&page=1
   "overdue_days": 27,
   "marked_by": { "id": 2, "username": "anna" },
   "marked_at": "2026-10-23T20:31:05+03:00",
-  "reminder_sent_at": "2026-09-23T09:00:12+03:00"
+  "reminder_sent_at": "2026-09-23T09:00:12+03:00",
+  "reminders": [
+    { "channel": "telegram", "sent_at": "2026-09-23T09:00:12+03:00" },
+    { "channel": "email", "sent_at": "2026-09-23T09:00:13+03:00" }
+  ],
+  "attachments_count": 0
 }
 ```
 
@@ -793,6 +806,12 @@ GET /api/v1/payments/summary?date_from=2026-10-01&date_to=2026-10-31
 | `GET /payment-occurrences` | да | да | 200 `Paginated<PaymentOccurrenceOut>` | 422 |
 | `GET /payment-occurrences/{id}` | да | да | 200 `PaymentOccurrenceOut` | 404 |
 | `PATCH /payment-occurrences/{id}` | да | да | 200 `PaymentOccurrenceOut` | 404, 409 `occurrence_not_paid`, 422 |
+| `GET /payment-occurrences/calendar.ics` | да | да | 200 `text/calendar` | 422 |
+| `GET /payment-occurrences/{id}/attachments` | да | да | 200 `AttachmentOut[]` | 404 |
+| `POST /payment-occurrences/{id}/attachments/file` | да | да | 201 `AttachmentOut` | 404, 409 `conflict`, 422 |
+| `POST /payment-occurrences/{id}/attachments/link` | да | да | 201 `AttachmentOut` | 404, 409 `conflict`, 422 |
+| `GET /payment-occurrences/{id}/attachments/{aid}/download` | да | да | 200 файл | 404, 409 `conflict` |
+| `DELETE /payment-occurrences/{id}/attachments/{aid}` | да | только свои | 204 | 403, 404 |
 | `GET /payments/summary` | да | да | 200 `SummaryOut` | 422 |
 | `GET /users` | да | **нет** | 200 `Paginated<UserOut>` | 403 |
 | `POST /users` | да | **нет** | 201 `UserOut` | 403, 409 `username_taken`, 422 |
@@ -906,7 +925,35 @@ export interface PaymentOccurrenceOut {
   overdue_days: number;
   marked_by: UserBrief | null;
   marked_at: ISODateTime | null;
-  reminder_sent_at: ISODateTime | null;
+  reminder_sent_at: ISODateTime | null;  // Telegram
+  reminders: ReminderOut[];              // все каналы, включая Telegram
+  attachments_count: number;
+}
+
+export type ReminderChannel = 'telegram' | 'email' | 'webhook' | 'apprise';
+export interface ReminderOut { channel: ReminderChannel; sent_at: ISODateTime; }
+
+// ── чеки и ссылки к оплате ─────────────────────────────
+export type AttachmentKind = 'file' | 'link';
+
+export interface AttachmentOut {
+  id: number;
+  kind: AttachmentKind;
+  name: string;
+  url: string | null;        // только у ссылки
+  content_type: string;      // у файла — по содержимому: application/pdf, image/png…
+  size: number | null;
+  uploaded_by: UserBrief | null;
+  created_at: ISODateTime;
+}
+
+export interface AttachmentLinkIn { url: string; name?: string; }
+
+export interface CalendarQuery {
+  currency?: Currency;
+  state?: OccurrenceState;
+  due_from?: ISODate;
+  due_to?: ISODate;
 }
 
 export type PaymentOccurrencePatchIn =
@@ -975,3 +1022,105 @@ export interface UserPatchIn {
   is_active?: boolean;  // false — блокировка без удаления
 }
 ```
+
+---
+
+## 10. Дополнительно: чеки, календарь, каналы
+
+### 10.1 `GET /api/v1/payment-occurrences/{id}/attachments`
+
+**Кто:** все. **Ответ `200 OK` — `AttachmentOut[]`** (по времени добавления):
+```json
+[
+  {
+    "id": 7,
+    "kind": "file",
+    "name": "чек сентябрь.pdf",
+    "url": null,
+    "content_type": "application/pdf",
+    "size": 48213,
+    "uploaded_by": { "id": 5, "username": "user" },
+    "created_at": "2026-10-24T06:52:10+03:00"
+  },
+  {
+    "id": 8,
+    "kind": "link",
+    "name": "Выписка банка 22/09",
+    "url": "https://example.com/bank/receipt-0922",
+    "content_type": "",
+    "size": null,
+    "uploaded_by": { "id": 5, "username": "user" },
+    "created_at": "2026-10-24T06:53:02+03:00"
+  }
+]
+```
+
+### 10.2 `POST /api/v1/payment-occurrences/{id}/attachments/file`
+
+**Кто:** все. Тело — `multipart/form-data`, поле `file`.
+
+- Форматы: PDF, PNG, JPEG, WebP, HEIC. Тип определяется **по содержимому** (сигнатура файла),
+  а не по расширению и не по `Content-Type` клиента.
+- Размер — до `ATTACHMENT_MAX_MB` (по умолчанию 10 МБ). Пустой файл — 422.
+- Имя — исходное без пути; на диске файл хранится под случайным именем.
+- Не больше 20 вложений на период — иначе 409 `conflict`.
+
+**Ответ `201 Created` — `AttachmentOut`.** **Ошибки:** 404, 409, 422 (`fields.file`).
+
+### 10.3 `POST /api/v1/payment-occurrences/{id}/attachments/link`
+
+**Кто:** все. **Тело — `AttachmentLinkIn`:** `{ "url": "https://…", "name": "Платёжка" }`
+(`name` необязательно, по умолчанию — сама ссылка). Только `http://` и `https://` —
+иначе 422 (`fields.url`). **Ответ `201 Created` — `AttachmentOut`.**
+
+### 10.4 `GET /api/v1/payment-occurrences/{id}/attachments/{attachment_id}/download`
+
+**Кто:** все. Отдаёт файл с `Content-Disposition: attachment` и типом из `content_type`.
+Файлы не раздаются статикой — только этим эндпоинтом с access-токеном, поэтому фронт скачивает
+через `fetch` → `Blob`. У вложения-ссылки файла нет — 409 `conflict`; вложение другого периода — 404.
+
+### 10.5 `DELETE /api/v1/payment-occurrences/{id}/attachments/{attachment_id}`
+
+**Кто:** тот, кто добавил, или администратор (иначе 403). **Ответ `204`.** Файл удаляется с диска
+после коммита транзакции. При удалении платежа будущие неоплаченные периоды удаляются вместе
+с вложениями и файлами.
+
+### 10.6 `GET /api/v1/payment-occurrences/calendar.ics`
+
+**Кто:** все. **Query — `CalendarQuery`:** `currency`, `state`, `due_from` (по умолчанию —
+3 месяца назад), `due_to` (по умолчанию — через 12 месяцев). Диапазон длиннее 1098 дней
+или `due_from > due_to` — 422.
+
+Ответ — `text/calendar` (RFC 5545), файл `invoice-keeper.ics`:
+- событие на весь день срока: `Оплата: <название> — <сумма>`, у оплаченных — с ✅ и датой оплаты;
+- у неоплаченных — `VALARM` за `REMINDER_DAYS_BEFORE` дней;
+- кроме созданных периодов — будущие сроки активных платежей по расписанию;
+- `UID` = `payment-<id>-<ГГГГММДД>@invoice-keeper`: повторный импорт обновляет события, а не дублирует.
+
+### 10.7 Webhook
+
+Если задан `WEBHOOK_URL`, на него уходит `POST` с JSON при каждом напоминании:
+
+| Заголовок | Значение |
+|---|---|
+| `Content-Type` | `application/json; charset=utf-8` |
+| `X-Invoice-Keeper-Event` | `payment.reminder` (`ping` — от `manage.py check_channels`) |
+| `X-Invoice-Keeper-Delivery` | ключ идемпотентности `payment.reminder:<occurrence_id>` |
+| `X-Invoice-Keeper-Signature` | `sha256=<hex HMAC-SHA256 тела по WEBHOOK_SECRET>` (если секрет задан) |
+
+```json
+{
+  "event": "payment.reminder",
+  "sent_at": "2026-10-24T09:00:00+03:00",
+  "occurrence": {
+    "id": 22, "due_date": "2026-10-26", "days_left": 2,
+    "amount": "49.00", "currency": "USD", "status": "unpaid"
+  },
+  "recurring_payment": { "id": 6, "title": "Сервер Hetzner", "period": "monthly", "comment": "VPS" },
+  "text": "Напоминание об оплате: Сервер Hetzner\nСумма: 49,00 $ USD\nОплатить до: 26.10.2026 (через 2 дн.)",
+  "panel_url": "http://localhost:5173"
+}
+```
+
+Ответ не 2xx или сетевая ошибка — отметка о доставке снимается, следующая проверка повторит
+отправку с тем же `X-Invoice-Keeper-Delivery`.

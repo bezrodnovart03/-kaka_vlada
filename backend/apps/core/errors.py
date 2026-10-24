@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any
 
 from django.http import Http404, HttpRequest, HttpResponse
+from django.http.multipartparser import MultiPartParserError
 from ninja import NinjaAPI, Schema
 from ninja.errors import AuthenticationError, AuthorizationError, HttpError, ValidationError
 from ninja_extra.exceptions import APIException
@@ -171,6 +172,16 @@ def register_exception_handlers(api: NinjaAPI) -> None:
     @api.exception_handler(Http404)
     def on_404(request: HttpRequest, exc: Http404) -> HttpResponse:
         return respond(request, 404, ErrorCode.NOT_FOUND, "Не найдено")
+
+    @api.exception_handler(MultiPartParserError)
+    def on_bad_multipart(request: HttpRequest, exc: MultiPartParserError) -> HttpResponse:
+        # Битый multipart (нет boundary и т.п.) при загрузке файла — ошибка ввода, а не 500.
+        error = ErrorOut(
+            code=ErrorCode.VALIDATION_ERROR,
+            detail="Некорректное тело multipart/form-data",
+            fields={"body": ["Некорректное тело multipart/form-data"]},
+        )
+        return api.create_response(request, error, status=422)
 
     # Ошибки ninja_extra/ninja_jwt: AuthenticationFailed, InvalidToken из JWTAuth и т.п.
     # Их текст (на английском, иногда dict) наружу не отдаём.

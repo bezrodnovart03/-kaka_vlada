@@ -5,7 +5,7 @@ import type { PaymentOccurrenceOut } from '../api/types';
 import { useAuth } from '../auth';
 import { OccurrenceActions } from '../components/OccurrenceActions';
 import { SummaryCards } from '../components/SummaryCards';
-import { ErrorBox, Modal, StatusBadge, useLoader } from '../components/ui';
+import { ErrorBox, Modal, StatusBadge, useLoader, useToast } from '../components/ui';
 import { formatDate, formatMoney, monthBounds, MONTHS } from '../format';
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -16,6 +16,20 @@ export function CalendarPage() {
   const [offset, setOffset] = useState(0);
   const [from, to] = monthBounds(today, offset);
   const [selected, setSelected] = useState<PaymentOccurrenceOut | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const toast = useToast();
+
+  async function exportCalendar() {
+    setExporting(true);
+    try {
+      await api.occurrences.exportCalendar();
+      toast.ok('Календарь скачан: откройте файл, чтобы импортировать сроки');
+    } catch (e) {
+      toast.error(e);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const occurrences = useLoader(
     () => api.occurrences.list({ due_from: from, due_to: to, page_size: 200 }),
@@ -57,6 +71,14 @@ export function CalendarPage() {
               Сегодня
             </button>
           )}
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={exporting}
+            onClick={exportCalendar}
+            title="Файл .ics для Google, Apple или Outlook: сроки за 3 месяца назад и на год вперёд, с напоминанием"
+          >
+            📅 Экспорт .ics
+          </button>
         </div>
       </div>
 

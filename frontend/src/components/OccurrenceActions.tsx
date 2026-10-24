@@ -5,12 +5,16 @@ import { api } from '../api/endpoints';
 import type { PaymentOccurrenceOut } from '../api/types';
 import { useAuth } from '../auth';
 import { formatDate, formatMoney } from '../format';
+import { AttachmentsDialog } from './AttachmentsDialog';
 import { DateInput } from './DateInput';
 import { FieldError, Modal, useToast } from './ui';
 
-type Mode = 'pay' | 'correct';
+type Mode = 'pay' | 'correct' | 'attachments';
 
-/** Кнопки периода: «Оплачено», «Отменить», «Исправить дату». Доступны и админу, и пользователю. */
+/**
+ * Кнопки периода: «Оплачено», «Отменить», «Исправить дату», чеки и ссылки.
+ * Доступны и админу, и пользователю.
+ */
 export function OccurrenceActions({
   occurrence,
   onChanged,
@@ -70,7 +74,24 @@ export function OccurrenceActions({
           </button>
         </>
       )}
-      {mode && (
+      <button
+        className="btn btn-ghost btn-sm btn-count"
+        onClick={() => setMode('attachments')}
+        title="Чеки и ссылки"
+        aria-label={`Чеки и ссылки: ${occurrence.attachments_count}`}
+      >
+        📎{occurrence.attachments_count > 0 && ` ${occurrence.attachments_count}`}
+      </button>
+      {mode === 'attachments' && (
+        <AttachmentsDialog
+          occurrence={occurrence}
+          onClose={() => setMode(null)}
+          onChanged={() => {
+            api.occurrences.get(occurrence.id).then(onChanged, () => {});
+          }}
+        />
+      )}
+      {(mode === 'pay' || mode === 'correct') && (
         <PaidDateDialog
           mode={mode}
           occurrence={occurrence}
@@ -91,7 +112,7 @@ function PaidDateDialog({
   onClose,
   onSaved,
 }: {
-  mode: Mode;
+  mode: 'pay' | 'correct';
   occurrence: PaymentOccurrenceOut;
   onClose: () => void;
   onSaved: (updated: PaymentOccurrenceOut) => void;

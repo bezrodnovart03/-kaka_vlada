@@ -7,7 +7,7 @@ from django.core.management.base import BaseCommand, CommandParser
 from django.db import transaction
 
 from apps.core.schemas import local_today
-from apps.payments import services
+from apps.payments import attachments, services
 from apps.payments.models import OccurrenceStatus, Period, RecurringPayment
 from apps.payments.schedule import shift_months
 from apps.users.models import User, UserRole
@@ -73,6 +73,14 @@ class Command(BaseCommand):
         for index, occurrence in enumerate(history):
             delay = timedelta(days=2 if index == 1 else 0)
             services.mark_paid(occurrence, occurrence.due_date + delay, admin, source="seed")
+        if history:
+            # Чек к последней оплате — ссылка; файлы прикрепляются в панели.
+            attachments.add_link(
+                history[-1],
+                "https://example.com/receipts/rent",
+                "Платёжное поручение",
+                admin,
+            )
 
         create(
             "Сервер Hetzner",

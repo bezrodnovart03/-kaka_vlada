@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import sys
+from typing import Any
 
 import django_stubs_ext
 from django.urls import reverse_lazy
@@ -177,6 +178,39 @@ REMINDER_CHECK_INTERVAL_SECONDS = settings.reminders.check_interval_seconds
 PANEL_URL = settings.reminders.panel_url
 
 
+# Email-напоминания (SMTP)
+# https://docs.djangoproject.com/en/6.0/topics/email/
+
+EMAIL_BACKEND = settings.email.backend
+EMAIL_HOST = settings.email.host
+EMAIL_PORT = settings.email.port
+EMAIL_HOST_USER = settings.email.host_user
+EMAIL_HOST_PASSWORD = settings.email.host_password
+EMAIL_USE_TLS = settings.email.use_tls
+EMAIL_USE_SSL = settings.email.use_ssl
+EMAIL_TIMEOUT = settings.email.timeout
+DEFAULT_FROM_EMAIL = settings.email.from_email
+REMINDER_EMAIL_TO = settings.email.recipients
+REMINDER_EMAIL_TO_USERS = settings.email.to_users
+
+
+# Webhook и другие каналы (Apprise)
+
+WEBHOOK_URL = settings.webhook.url
+WEBHOOK_SECRET = settings.webhook.secret
+WEBHOOK_TIMEOUT = settings.webhook.timeout
+NOTIFY_URLS = settings.channels.notify_urls
+
+
+# Чеки и ссылки к оплатам. Файлы не раздаются статикой — только через API с авторизацией.
+
+MEDIA_ROOT = BASE_DIR / settings.storage.media_root
+ATTACHMENT_MAX_BYTES = settings.storage.attachment_max_mb * 1024 * 1024
+# Django держит в памяти до этого размера, крупнее — во временном файле.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = ATTACHMENT_MAX_BYTES + 1024 * 1024
+
+
 # Админка (Unfold)
 # https://unfoldadmin.com/docs/configuration/settings/
 
@@ -207,6 +241,16 @@ UNFOLD = {
                         "link": reverse_lazy("admin:payments_paymentoccurrence_changelist"),
                         "badge": "apps.core.admin_ui.overdue_badge",
                         "badge_variant": "danger",
+                    },
+                    {
+                        "title": "Чеки и ссылки",
+                        "icon": "attach_file",
+                        "link": reverse_lazy("admin:payments_paymentattachment_changelist"),
+                    },
+                    {
+                        "title": "Доставка напоминаний",
+                        "icon": "outgoing_mail",
+                        "link": reverse_lazy("admin:notifications_reminderdelivery_changelist"),
                     },
                 ],
             },
@@ -246,26 +290,46 @@ UNFOLD = {
 
 # Логи: авторизация и действия пользователей (logger "audit"), напоминания.
 
-LOGGING = {
+LOG_HANDLERS = ["console"]
+LOG_HANDLER_CONFIG: dict[str, dict[str, Any]] = {
+    "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+}
+if settings.storage.log_file:
+    # Файл с ротацией: 5 МБ × 5 архивов. Относительный путь — от каталога backend/.
+    LOG_HANDLERS.append("file")
+    LOG_HANDLER_CONFIG["file"] = {
+        "class": "logging.handlers.RotatingFileHandler",
+        "formatter": "plain",
+        "filename": str(BASE_DIR / settings.storage.log_file),
+        "maxBytes": 5 * 1024 * 1024,
+        "backupCount": 5,
+        "encoding": "utf-8",
+    }
+
+LOGGING: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
         "plain": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
     },
-    "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
-    },
+    "handlers": LOG_HANDLER_CONFIG,
     "loggers": {
-        "audit": {"handlers": ["console"], "level": "INFO", "propagate": False},
-        "apps": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "audit": {"handlers": LOG_HANDLERS, "level": "INFO", "propagate": False},
+        "apps": {"handlers": LOG_HANDLERS, "level": "INFO", "propagate": False},
     },
 }
 
 
-# Тесты: быстрый хешер паролей и без логов в выводе.
+# Тесты: быстрый хешер паролей, без логов в выводе и без внешних каналов.
 
 if "test" in sys.argv[1:2]:
     PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+    LOGGING["handlers"] = {"console": LOG_HANDLER_CONFIG["console"]}
     LOGGING["loggers"] = {name: {"level": "CRITICAL"} for name in ("audit", "apps")}
     TELEGRAM_BOT_TOKEN = ""
     TELEGRAM_CHAT_ID = ""
+    REMINDER_EMAIL_TO = []
+    REMINDER_EMAIL_TO_USERS = False
+    WEBHOOK_URL = ""
+    NOTIFY_URLS = []
+    MEDIA_ROOT = BASE_DIR / ".test-media"

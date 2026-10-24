@@ -1,5 +1,8 @@
-import { request } from './client';
+import { download, request } from './client';
 import type {
+  AttachmentLinkIn,
+  AttachmentOut,
+  CalendarQuery,
   MeOut,
   OccurrenceFilter,
   Paginated,
@@ -35,6 +38,36 @@ export const api = {
     get: (id: number) => request<PaymentOccurrenceOut>(`/payment-occurrences/${id}`),
     patch: (id: number, body: PaymentOccurrencePatchIn) =>
       request<PaymentOccurrenceOut>(`/payment-occurrences/${id}`, { method: 'PATCH', body }),
+    exportCalendar: (query: CalendarQuery = {}) =>
+      download('/payment-occurrences/calendar.ics', query as Q, 'invoice-keeper.ics'),
+  },
+
+  attachments: {
+    list: (occurrenceId: number) =>
+      request<AttachmentOut[]>(`/payment-occurrences/${occurrenceId}/attachments`),
+    uploadFile: (occurrenceId: number, file: File) => {
+      const body = new FormData();
+      body.append('file', file);
+      return request<AttachmentOut>(`/payment-occurrences/${occurrenceId}/attachments/file`, {
+        method: 'POST',
+        body,
+      });
+    },
+    addLink: (occurrenceId: number, body: AttachmentLinkIn) =>
+      request<AttachmentOut>(`/payment-occurrences/${occurrenceId}/attachments/link`, {
+        method: 'POST',
+        body,
+      }),
+    download: (occurrenceId: number, attachment: AttachmentOut) =>
+      download(
+        `/payment-occurrences/${occurrenceId}/attachments/${attachment.id}/download`,
+        undefined,
+        attachment.name,
+      ),
+    remove: (occurrenceId: number, attachmentId: number) =>
+      request<null>(`/payment-occurrences/${occurrenceId}/attachments/${attachmentId}`, {
+        method: 'DELETE',
+      }),
   },
 
   summary: (query: SummaryQuery = {}) =>

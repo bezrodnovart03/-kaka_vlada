@@ -16,7 +16,15 @@ import {
   StatusBadge,
   useLoader,
 } from '../components/ui';
-import { CURRENCIES, formatDate, formatDateTime, formatMoney, monthBounds, MONTHS } from '../format';
+import {
+  CHANNEL_LABEL,
+  CURRENCIES,
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  monthBounds,
+  MONTHS,
+} from '../format';
 
 const TABS: { state: OccurrenceState | ''; label: string }[] = [
   { state: '', label: 'Все' },
@@ -137,9 +145,15 @@ export function OccurrencesPage() {
                       {o.recurring_payment.title}
                     </Link>
                     {!o.recurring_payment.is_active && <span className="badge badge-muted badge-xs">удалён</span>}
-                    {o.reminder_sent_at && (
-                      <div className="hint" title={`Напоминание: ${formatDateTime(o.reminder_sent_at)}`}>
-                        🔔 напомнили {formatDateTime(o.reminder_sent_at)}
+                    {o.reminders.length > 0 && (
+                      <div
+                        className="hint"
+                        title={o.reminders
+                          .map((r) => `${CHANNEL_LABEL[r.channel]}: ${formatDateTime(r.sent_at)}`)
+                          .join('\n')}
+                      >
+                        🔔 напомнили {formatDateTime(o.reminders[0].sent_at)} ·{' '}
+                        {o.reminders.map((r) => CHANNEL_LABEL[r.channel]).join(', ')}
                       </div>
                     )}
                   </td>

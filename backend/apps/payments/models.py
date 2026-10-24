@@ -1,5 +1,7 @@
+import uuid
 from collections.abc import Iterator
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
@@ -159,3 +161,63 @@ class PaymentOccurrence(models.Model):
     @property
     def is_overdue(self) -> bool:
         return self.overdue_days > 0
+
+
+class AttachmentKind(models.TextChoices):
+    FILE = "file", _("Файл")
+    LINK = "link", _("Ссылка")
+
+
+def attachment_upload_to(instance: PaymentAttachment, filename: str) -> str:
+    # Имя на диске — случайное: исходное хранится в `name` и не попадает в путь.
+    suffix = Path(filename).suffix.lower()[:10]
+    return f"receipts/{instance.occurrence_id}/{uuid.uuid4().hex}{suffix}"
+
+
+class PaymentAttachment(models.Model):
+    """Чек (файл) или ссылка на оплату, прикреплённые к конкретному периоду."""
+
+    id: int
+    occurrence_id: int
+    uploaded_by_id: int | None
+
+    occurrence = models.ForeignKey(
+        PaymentOccurrence,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        verbose_name=_("период"),
+    )
+    kind = models.CharField(_("тип"), max_length=8, choices=AttachmentKind.choices)
+    file = models.FileField(_("файл"), upload_to=attachment_upload_to, blank=True)
+    # null, а не "": ограничение kind ↔ содержимое проверяет url IS NULL.
+    url = models.URLField(_("ссылка"), max_length=2000, null=True, blank=True)  # noqa: DJ001
+    name = models.CharField(_("название"), max_length=255)
+    content_type = models.CharField(_("тип содержимого"), max_length=100, blank=True)
+    size = models.PositiveIntegerField(_("размер, байт"), null=True, blank=True)
+
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("добавил"),
+    )
+    created_at = models.DateTimeField(_("добавлено"), auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        verbose_name = _("чек или ссылка")
+        verbose_name_plural = _("чеки и ссылки")
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind=AttachmentKind.FILE, url__isnull=True) & ~models.Q(file="")
+                )
+                | models.Q(kind=AttachmentKind.LINK, url__isnull=False, file=""),
+                name="attachment_kind_matches_content",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name

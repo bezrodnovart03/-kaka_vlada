@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -105,6 +105,64 @@ class ReminderSettings(BaseAppSettings):
         return bool(self.telegram_bot_token and self.telegram_chat_id)
 
 
+class EmailSettings(BaseAppSettings):
+    """
+    Email-напоминания через SMTP. Канал включён, если задан хотя бы один получатель:
+    адреса из REMINDER_EMAIL_TO и/или email активных пользователей (REMINDER_EMAIL_TO_USERS).
+    """
+
+    backend: str = Field(
+        default="django.core.mail.backends.smtp.EmailBackend", alias="EMAIL_BACKEND"
+    )
+    host: str = Field(default="localhost", alias="EMAIL_HOST")
+    port: int = Field(default=587, ge=1, le=65535, alias="EMAIL_PORT")
+    host_user: str = Field(default="", alias="EMAIL_HOST_USER")
+    host_password: str = Field(default="", alias="EMAIL_HOST_PASSWORD")
+    use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
+    use_ssl: bool = Field(default=False, alias="EMAIL_USE_SSL")
+    timeout: int = Field(default=10, ge=1, le=120, alias="EMAIL_TIMEOUT")
+    from_email: str = Field(default="Invoice Keeper <noreply@localhost>", alias="EMAIL_FROM")
+    recipients: list[str] = Field(default_factory=list, alias="REMINDER_EMAIL_TO")
+    to_users: bool = Field(default=False, alias="REMINDER_EMAIL_TO_USERS")
+
+    @model_validator(mode="after")
+    def tls_or_ssl(self) -> EmailSettings:
+        if self.use_tls and self.use_ssl:
+            raise ValueError("EMAIL_USE_TLS и EMAIL_USE_SSL не включаются одновременно")
+        return self
+
+
+class WebhookSettings(BaseAppSettings):
+    """Webhook: POST JSON на WEBHOOK_URL, подпись HMAC-SHA256 по WEBHOOK_SECRET."""
+
+    url: str = Field(default="", alias="WEBHOOK_URL")
+    secret: str = Field(default="", alias="WEBHOOK_SECRET")
+    timeout: int = Field(default=10, ge=1, le=60, alias="WEBHOOK_TIMEOUT")
+
+    @field_validator("url")
+    @classmethod
+    def http_only(cls, value: str) -> str:
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError("WEBHOOK_URL должен начинаться с http:// или https://")
+        return value
+
+
+class ChannelSettings(BaseAppSettings):
+    """Другие каналы через Apprise: Discord, Slack, ntfy, Matrix, Teams и др."""
+
+    # https://github.com/caronc/apprise/wiki — формат URL для каждого сервиса.
+    notify_urls: list[str] = Field(default_factory=list, alias="NOTIFY_URLS")
+
+
+class StorageSettings(BaseAppSettings):
+    """Чеки к оплатам и логи."""
+
+    media_root: str = Field(default="media", alias="MEDIA_ROOT")
+    attachment_max_mb: int = Field(default=10, ge=1, le=100, alias="ATTACHMENT_MAX_MB")
+    # Пусто — логи только в консоль.
+    log_file: str = Field(default="", alias="LOG_FILE")
+
+
 # Обязательные поля DjangoSettings/AdminSettings приходят из .env, а не из аргументов __init__.
 # mypy понимает это через плагин pydantic, Pyright — нет, поэтому игнор только для него.
 class Settings(BaseAppSettings):
@@ -113,6 +171,10 @@ class Settings(BaseAppSettings):
     jwt: JWTSettings = Field(default_factory=JWTSettings)
     admin: AdminSettings = Field(default_factory=AdminSettings)  # pyright: ignore[reportArgumentType]
     reminders: ReminderSettings = Field(default_factory=ReminderSettings)
+    email: EmailSettings = Field(default_factory=EmailSettings)
+    webhook: WebhookSettings = Field(default_factory=WebhookSettings)
+    channels: ChannelSettings = Field(default_factory=ChannelSettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
 
 
 @lru_cache(maxsize=1)

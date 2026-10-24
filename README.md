@@ -30,9 +30,14 @@
 ### Дополнительно
 
 - **Кнопка «Оплачено» прямо в сообщении бота** — отмечает период оплаченным сегодняшней датой и дописывает в сообщение, кто отметил.
-- **Календарь оплат** — периоды на сетке месяца, клик открывает отметку оплаты.
+- **Календарь оплат** — периоды на сетке месяца, клик открывает отметку оплаты. Кнопка «📅 Экспорт .ics» скачивает сроки для Google / Apple / Outlook-календаря: оплаченные с ✅, будущие — по расписанию на год вперёд, у неоплаченных — оповещение за 3 дня.
 - **Итоги на дату и бюджет на месяц / год** по каждой валюте; будущие сроки считаются по расписанию, даже если периоды ещё не созданы.
-- **Логи** входа и действий (создание и удаление платежей, отметки оплаты, управление пользователями) — логгер `audit` в консоль сервера.
+- **Email-оповещения через SMTP** — письмо (текст + HTML) каждому получателю отдельно, во вложении `.ics` со сроком. Получатели — список из `.env` и/или email активных пользователей.
+- **Webhook на указанный адрес** — JSON-событие `payment.reminder` с подписью HMAC-SHA256 (`X-Invoice-Keeper-Signature: sha256=…`) и ключом идемпотентности `X-Invoice-Keeper-Delivery`.
+- **Другие каналы** через [Apprise](https://github.com/caronc/apprise): Discord, Slack, ntfy, Matrix, MS Teams, Pushover и ещё ~100 сервисов — одной строкой URL в `NOTIFY_URLS`.
+  - Правила напоминаний одинаковы во всех каналах: за 3 дня, без дублей (в каждом канале своя отметка), оплаченный и удалённый платёж не напоминает, сбой одного канала не мешает остальным и повторяется на следующей проверке. В строке периода видно, в какие каналы ушло напоминание.
+- **Чек или ссылка к конкретной оплате** — кнопка «📎» у периода: файл (PDF, PNG, JPEG, WebP, HEIC; тип проверяется по содержимому, до 10 МБ, drag & drop) или ссылка `http(s)`. Файлы отдаются только через API с авторизацией; удалить может автор или администратор.
+- **Логи** входа и действий (создание и удаление платежей, отметки оплаты, вложения, управление пользователями, доставка напоминаний) — логгер `audit` в консоль сервера и, если задан `LOG_FILE`, в файл с ротацией (5 МБ × 5). Журнал доставок и вложений — в Django-админке.
 - **UX:** фильтры «Просроченные / Предстоящие / Оплаченные», подсветка просрочек, подсказки «через 2 дня», тёмная тема, адаптивная вёрстка.
 
 ## Стек
@@ -42,6 +47,7 @@
 | Backend | Python 3.14, Django 6.0, django-ninja (REST API + OpenAPI/Swagger), django-ninja-jwt, django-simple-history, django-unfold (админка), pydantic-settings |
 | Frontend | React 18, TypeScript, Vite, react-router |
 | Бот | Telegram Bot API (stdlib, без сторонних библиотек) |
+| Каналы и файлы | Django email (SMTP), [httpx](https://www.python-httpx.org/) (webhook), [Apprise](https://github.com/caronc/apprise) (другие сервисы), [icalendar](https://icalendar.readthedocs.io/) (`.ics`), [filetype](https://github.com/h2non/filetype.py) (тип файла по содержимому) |
 | Качество | ruff (линтер + форматтер), mypy `strict` с плагинами django и pydantic, pre-commit, Django TestCase |
 | Пакеты (backend) | [uv](https://docs.astral.sh/uv/) |
 
@@ -96,6 +102,18 @@ cp backend/.env.example backend/.env
 | `REMINDER_CHECK_INTERVAL_SECONDS` | Как часто проверять сроки, секунд | `60` |
 | `TELEGRAM_PAY_BUTTON` | Кнопка «Оплачено» в сообщении | `true` |
 | `PANEL_URL` | Ссылка на панель в напоминании (необязательно) | `http://localhost:5173` |
+| `EMAIL_HOST`, `EMAIL_PORT` | SMTP-сервер | `smtp.yandex.ru`, `465` |
+| `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` | Логин и пароль SMTP (для Яндекса/Gmail — пароль приложения) | — |
+| `EMAIL_USE_TLS` / `EMAIL_USE_SSL` | STARTTLS (порт 587) или SSL (порт 465), не оба сразу | `true` / `false` |
+| `EMAIL_FROM` | Отправитель | `Invoice Keeper <bot@example.com>` |
+| `REMINDER_EMAIL_TO` | Получатели напоминаний (JSON-список); пусто — email выключен | `["team@example.com"]` |
+| `REMINDER_EMAIL_TO_USERS` | Также слать на email активных пользователей | `false` |
+| `WEBHOOK_URL` | Адрес webhook; пусто — выключен | `https://example.com/hooks/invoice` |
+| `WEBHOOK_SECRET` | Ключ подписи HMAC-SHA256 (необязательно) | случайная строка |
+| `NOTIFY_URLS` | Другие каналы через Apprise (JSON-список URL) | `["ntfy://invoice-keeper"]` |
+| `MEDIA_ROOT` | Каталог чеков (относительно `backend/`) | `media` |
+| `ATTACHMENT_MAX_MB` | Максимальный размер чека, МБ | `10` |
+| `LOG_FILE` | Файл логов с ротацией; пусто — только консоль | `logs/app.log` |
 
 Как узнать `TELEGRAM_CHAT_ID`: добавьте бота в чат, напишите в чат любое сообщение и откройте `https://api.telegram.org/bot<TOKEN>/getUpdates` — id чата в поле `chat.id` (у групп он отрицательный). Без токена и чата всё, кроме отправки сообщений, работает.
 
@@ -132,7 +150,7 @@ uv run python manage.py seed_demo --reset
 
 ### 4. Напоминания
 
-Фоновый процесс проверяет сроки и пишет в Telegram-чат. Запустите его в отдельном терминале:
+Фоновый процесс проверяет сроки и пишет в Telegram-чат и в дополнительные каналы (email, webhook, Apprise), если они заданы в `.env`. Запустите его в отдельном терминале:
 
 ```bash
 cd backend
@@ -140,6 +158,27 @@ uv run python manage.py run_reminders
 ```
 
 Процесс раз в `REMINDER_CHECK_INTERVAL_SECONDS` создаёт следующие периоды и отправляет напоминания, а между проверками слушает нажатия кнопки «Оплачено». Для cron есть `run_reminders --once`.
+
+Проверить настройку каналов — тестовое сообщение в каждый настроенный канал:
+
+```bash
+uv run python manage.py check_channels
+```
+
+Для локальной проверки email без настоящего SMTP подойдёт [Mailpit](https://mailpit.axllent.org/) — письма видны на http://localhost:8025:
+
+```bash
+docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
+```
+
+В `.env`: `EMAIL_HOST=localhost`, `EMAIL_PORT=1025`, `EMAIL_USE_TLS=false`, `REMINDER_EMAIL_TO=["team@example.com"]`.
+
+Webhook-получатель проверяет подпись так (Python):
+
+```python
+expected = "sha256=" + hmac.new(SECRET.encode(), request_body, hashlib.sha256).hexdigest()
+hmac.compare_digest(expected, request.headers["X-Invoice-Keeper-Signature"])
+```
 
 ### 5. Frontend
 
@@ -199,6 +238,17 @@ cd ../frontend && npm run typecheck
 | GET | `/payment-occurrences/{id}` | Конкретный период | все роли |
 | PATCH | `/payment-occurrences/{id}` | Подтверждение или отмена оплаты, исправление фактической даты | все роли |
 
+### Дополнительные эндпоинты
+
+| Метод | Эндпоинт | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/payment-occurrences/calendar.ics` | Экспорт сроков в iCalendar (фильтры `currency`, `state`, `due_from`, `due_to`) | все роли |
+| GET | `/payment-occurrences/{id}/attachments` | Чеки и ссылки периода | все роли |
+| POST | `/payment-occurrences/{id}/attachments/file` | Прикрепить файл (multipart, поле `file`) | все роли |
+| POST | `/payment-occurrences/{id}/attachments/link` | Прикрепить ссылку | все роли |
+| GET | `/payment-occurrences/{id}/attachments/{attachment_id}/download` | Скачать файл | все роли |
+| DELETE | `/payment-occurrences/{id}/attachments/{attachment_id}` | Удалить вложение | автор или админ |
+
 ### Итоги, пользователи, документация
 
 | Метод | Эндпоинт | Назначение | Доступ |
@@ -214,6 +264,8 @@ cd ../frontend && npm run typecheck
 
 - **RecurringPayment** — регулярный платёж: название, сумма, валюта (`RUB` / `USD` / `EUR`), первый срок и день месяца, периодичность, признак активности. Удаление мягкое: платёж деактивируется, неоплаченные будущие периоды удаляются, история остаётся.
 - **PaymentOccurrence** — период платежа: снимок суммы и валюты, срок оплаты, статус (`paid` / `unpaid`), фактическая дата оплаты, кто и когда отметил, когда отправлено напоминание. Уникален по (платёж, срок).
+- **PaymentAttachment** — чек (файл) или ссылка, прикреплённые к периоду. Имя файла на диске случайное, исходное хранится отдельно; файл удаляется с диска вместе с записью.
+- **ReminderDelivery** — напоминание по периоду, отправленное в email / webhook / Apprise. Уникальна по (период, канал) — это и есть защита от дублей; Telegram отмечается в `PaymentOccurrence.reminder_sent_at`.
 - **User** — пользователь Django с ролью (администратор / пользователь).
 - Изменения моделей пишутся в historical-таблицы `django-simple-history`.
 
@@ -234,3 +286,9 @@ cd ../frontend && npm run typecheck
 5. Вкладка «Просроченные»: аренда со сроком позавчера.
 6. Отметить её «Другой датой…» = дата срока — просрочка исчезнет; «Исправить дату» у оплаченного периода пересчитывает просрочку, срок не меняется.
 7. Клик по названию платежа: прошлые периоды со своими статусами и следующий период — «Не оплачено».
+
+Дополнительно:
+
+8. «📎» у оплаченного периода аренды — ссылка «Платёжное поручение» из демо-данных; перетащить PDF или фото чека, скачать, удалить.
+9. «Календарь» → «📅 Экспорт .ics» → открыть файл: сроки появятся в календаре с оповещением за 3 дня.
+10. С настроенным email / webhook — `check_channels`, затем напоминание по «Серверу» приходит во все каналы; в строке периода — «🔔 напомнили … · Telegram, Email, Webhook».

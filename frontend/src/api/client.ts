@@ -98,9 +98,12 @@ function buildUrl(path: string, query?: Query): string {
   return `${BASE}${path}${qs ? `?${qs}` : ''}`;
 }
 
-export async function request<T>(path: string, options: RequestOptions = {}, retry = true): Promise<T> {
+/** fetch с access-токеном: при 401 один раз обновляет access и повторяет запрос. */
+async function send(path: string, options: RequestOptions, retry: boolean): Promise<Response> {
   const headers: Record<string, string> = {};
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  // FormData (загрузка файла): Content-Type с boundary браузер ставит сам.
+  const isForm = options.body instanceof FormData;
+  if (options.body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
   let response: Response;
@@ -108,23 +111,49 @@ export async function request<T>(path: string, options: RequestOptions = {}, ret
     response = await fetch(buildUrl(path, options.query), {
       method: options.method ?? 'GET',
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body:
+        options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
       credentials: 'same-origin',
     });
   } catch {
     throw new ApiError(0, null);
   }
+  if (response.ok) return response;
 
-  const body = await parse(response);
-  if (response.ok) return body as T;
-
-  const error = new ApiError(response.status, body as ErrorOut | null);
+  const error = new ApiError(response.status, (await parse(response)) as ErrorOut | null);
   if (response.status === 401 && error.code === 'unauthorized' && retry) {
-    if (await refreshAccess()) return request<T>(path, options, false);
+    if (await refreshAccess()) return send(path, options, false);
     accessToken = null;
     onUnauthorized();
   }
   throw error;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return (await parse(await send(path, options, true))) as T;
+}
+
+/**
+ * Скачивает файл из API. Обычная ссылка не подходит: access-токен живёт в памяти
+ * и в заголовке Authorization, поэтому — fetch → Blob → временная ссылка.
+ */
+export async function download(path: string, query?: Query, fallbackName = 'file'): Promise<void> {
+  const response = await send(path, { query }, true);
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  // RFC 6266: filename*=UTF-8''… для кириллицы, иначе filename="…".
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const plain = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+  const name = encoded ? decodeURIComponent(encoded) : (plain ?? fallbackName);
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ── auth: cookie уходит только на /api/v1/auth/* ─────────

@@ -790,3 +790,67 @@ td.actions > * + * {
     padding: 8px 10px;
   }
 }
+
+/* ── чеки и ссылки ── */
+.attachments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.attachments.loading {
+  opacity: 0.6;
+}
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.attachment-icon {
+  font-size: 18px;
+}
+.attachment-body {
+  flex: 1;
+  min-width: 0;
+}
+.attachment-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  text-align: left;
+}
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.dropzone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 14px;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+}
+.dropzone-active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.dropzone .field-error {
+  flex-basis: 100%;
+}
+.btn-count {
+  font-variant-numeric: tabular-nums;
+}

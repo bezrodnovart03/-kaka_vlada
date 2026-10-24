@@ -1,8 +1,10 @@
-from datetime import timedelta
+from datetime import date, timedelta
+from typing import Any
 
 from django.db import transaction
-from django.db.models import QuerySet
-from ninja import Query, Router
+from django.db.models import Count, QuerySet
+from django.http import FileResponse, HttpResponse
+from ninja import File, Query, Router, UploadedFile
 
 from apps.core.auth import admin_auth
 from apps.core.errors import ApiError, ErrorCode, ErrorOut, field_error
@@ -10,10 +12,19 @@ from apps.core.schemas import local_today, paginate
 from apps.notifications.services import send_due_reminders_in_background
 from apps.users.types import AuthedRequest
 
-from . import services
-from .models import OccurrenceStatus, PaymentOccurrence, RecurringPayment
+from . import attachments, ics, services
+from .models import (
+    AttachmentKind,
+    OccurrenceStatus,
+    PaymentAttachment,
+    PaymentOccurrence,
+    RecurringPayment,
+)
 from .schedule import shift_months
 from .schemas import (
+    AttachmentLinkIn,
+    AttachmentOut,
+    CalendarQuery,
     OccurrenceFilter,
     PaginatedPaymentOccurrenceOut,
     PaginatedRecurringPaymentOut,
@@ -114,7 +125,11 @@ def delete_recurring_payment(request: AuthedRequest, payment_id: int) -> tuple[i
 
 
 def _occurrences() -> QuerySet[PaymentOccurrence]:
-    return PaymentOccurrence.objects.select_related("recurring_payment", "marked_by")
+    return (
+        PaymentOccurrence.objects.select_related("recurring_payment", "marked_by")
+        .prefetch_related("reminder_deliveries")
+        .annotate(attachments_total=Count("attachments"))
+    )
 
 
 def _get_occurrence(occurrence_id: int) -> PaymentOccurrence:
@@ -141,17 +156,86 @@ def list_occurrences(request: AuthedRequest, filters: Query[OccurrenceFilter]) -
         queryset = queryset.filter(due_date__gte=filters.due_from)
     if filters.due_to:
         queryset = queryset.filter(due_date__lte=filters.due_to)
-    match filters.state:
-        case "paid":
-            queryset = queryset.filter(status=OccurrenceStatus.PAID)
-        case "unpaid":
-            queryset = queryset.filter(status=OccurrenceStatus.UNPAID)
-        case "overdue":
-            queryset = queryset.filter(status=OccurrenceStatus.UNPAID, due_date__lt=today)
-        case "upcoming":
-            queryset = queryset.filter(status=OccurrenceStatus.UNPAID, due_date__gte=today)
-    queryset = queryset.order_by(filters.ordering, "id")
+    queryset = _filter_state(queryset, filters.state, today).order_by(filters.ordering, "id")
     return paginate(queryset, filters)
+
+
+def _filter_state(
+    queryset: QuerySet[PaymentOccurrence], state: str | None, today: date
+) -> QuerySet[PaymentOccurrence]:
+    match state:
+        case "paid":
+            return queryset.filter(status=OccurrenceStatus.PAID)
+        case "unpaid":
+            return queryset.filter(status=OccurrenceStatus.UNPAID)
+        case "overdue":
+            return queryset.filter(status=OccurrenceStatus.UNPAID, due_date__lt=today)
+        case "upcoming":
+            return queryset.filter(status=OccurrenceStatus.UNPAID, due_date__gte=today)
+    return queryset
+
+
+def _binary_response(media_types: list[str], description: str) -> dict[str, Any]:
+    """openapi_extra для эндпоинтов, которые отдают файл, а не JSON."""
+    binary = {"schema": {"type": "string", "format": "binary"}}
+    return {
+        "responses": {
+            200: {"description": description, "content": dict.fromkeys(media_types, binary)}
+        }
+    }
+
+
+MAX_CALENDAR_DAYS = 3 * 366
+
+
+@occurrences_router.get(
+    "/calendar.ics",
+    response={401: ErrorOut, 422: ErrorOut},
+    summary="Экспорт периодов в календарь (iCalendar .ics)",
+    description=(
+        "События на весь день срока с оповещением за REMINDER_DAYS_BEFORE дней. Кроме созданных "
+        "периодов — будущие сроки активных платежей по расписанию. По умолчанию — от 3 месяцев "
+        f"назад до 12 месяцев вперёд; диапазон длиннее {MAX_CALENDAR_DAYS} дней — 422."
+    ),
+    openapi_extra=_binary_response(["text/calendar"], "Файл .ics"),
+)
+def export_calendar(request: AuthedRequest, query: Query[CalendarQuery]) -> HttpResponse:
+    today = local_today()
+    due_from = query.due_from or shift_months(today, -3, today.day)
+    due_to = query.due_to or shift_months(today, 12, today.day)
+    if due_from > due_to:
+        raise field_error("due_to", "Дата начала позже даты окончания")
+    if (due_to - due_from).days + 1 > MAX_CALENDAR_DAYS:
+        raise field_error("due_to", f"Диапазон не должен превышать {MAX_CALENDAR_DAYS} дней")
+
+    services.sync_all_occurrences(today)
+    occurrences = PaymentOccurrence.objects.select_related("recurring_payment").filter(
+        due_date__gte=due_from, due_date__lte=due_to
+    )
+    payments = RecurringPayment.objects.filter(deleted_at__isnull=True)
+    if query.currency:
+        occurrences = occurrences.filter(currency=query.currency)
+        payments = payments.filter(currency=query.currency)
+    occurrences = _filter_state(occurrences, query.state, today).order_by("due_date", "id")
+    events = [ics.occurrence_event(occurrence) for occurrence in occurrences]
+
+    # Плановые сроки — только неоплаченные будущие: они подходят под фильтры без статуса,
+    # «неоплаченные» и «предстоящие».
+    if query.state in (None, "unpaid", "upcoming"):
+        for payment in payments:
+            last = (
+                payment.occurrences.order_by("-due_date").values_list("due_date", flat=True).first()
+            )
+            for due_date in payment.schedule():
+                if due_date > due_to:
+                    break
+                if due_date < max(due_from, today) or (last is not None and due_date <= last):
+                    continue
+                events.append(ics.planned_event(payment, due_date))
+
+    response = HttpResponse(ics.build_calendar(events), content_type="text/calendar; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="invoice-keeper.ics"'
+    return response
 
 
 @occurrences_router.get(
@@ -201,6 +285,102 @@ def patch_occurrence(
             case None if paid_at is not None:
                 services.correct_paid_at(occurrence, paid_at, user)
     return occurrence
+
+
+# ── чеки и ссылки ────────────────────────────────────────
+
+
+def _get_attachment(occurrence_id: int, attachment_id: int) -> PaymentAttachment:
+    # Период сверяется в Python: у поиска по pk Django отсекает числа вне диапазона БД,
+    # а фильтр по occurrence_id с id > int64 падал в SQLite с OverflowError (500).
+    attachment = (
+        PaymentAttachment.objects.select_related("uploaded_by").filter(pk=attachment_id).first()
+    )
+    if attachment is None or attachment.occurrence_id != occurrence_id:
+        raise ApiError(404, ErrorCode.NOT_FOUND, "Вложение не найдено")
+    return attachment
+
+
+@occurrences_router.get(
+    "/{occurrence_id}/attachments",
+    response={200: list[AttachmentOut], 401: ErrorOut, 404: ErrorOut, 422: ErrorOut},
+    summary="Чеки и ссылки периода",
+)
+def list_attachments(request: AuthedRequest, occurrence_id: int) -> QuerySet[PaymentAttachment]:
+    occurrence = _get_occurrence(occurrence_id)
+    return occurrence.attachments.select_related("uploaded_by")
+
+
+@occurrences_router.post(
+    "/{occurrence_id}/attachments/file",
+    response={201: AttachmentOut, 401: ErrorOut, 404: ErrorOut, 409: ErrorOut, 422: ErrorOut},
+    summary="Прикрепить чек (файл)",
+    description=(
+        "multipart/form-data, поле `file`. Форматы: PDF, PNG, JPEG, WebP, HEIC — тип "
+        "определяется по содержимому файла. Размер — до ATTACHMENT_MAX_MB (по умолчанию 10 МБ). "
+        f"Не больше {attachments.MAX_ATTACHMENTS} вложений на период (409)."
+    ),
+)
+def upload_attachment(
+    request: AuthedRequest, occurrence_id: int, file: File[UploadedFile]
+) -> tuple[int, PaymentAttachment]:
+    occurrence = _get_occurrence(occurrence_id)
+    return 201, attachments.add_file(occurrence, file, request.auth)
+
+
+@occurrences_router.post(
+    "/{occurrence_id}/attachments/link",
+    response={201: AttachmentOut, 401: ErrorOut, 404: ErrorOut, 409: ErrorOut, 422: ErrorOut},
+    summary="Прикрепить ссылку (на чек, платёжку, счёт)",
+    description=(
+        "Только http:// и https:// (иначе 422). "
+        f"Не больше {attachments.MAX_ATTACHMENTS} вложений на период (409)."
+    ),
+)
+def add_link_attachment(
+    request: AuthedRequest, occurrence_id: int, payload: AttachmentLinkIn
+) -> tuple[int, PaymentAttachment]:
+    occurrence = _get_occurrence(occurrence_id)
+    return 201, attachments.add_link(occurrence, payload.url, payload.name, request.auth)
+
+
+@occurrences_router.get(
+    "/{occurrence_id}/attachments/{attachment_id}/download",
+    response={401: ErrorOut, 404: ErrorOut, 409: ErrorOut, 422: ErrorOut},
+    summary="Скачать прикреплённый файл",
+    description="У вложения-ссылки файла нет — 409.",
+    openapi_extra=_binary_response(
+        [*attachments.ALLOWED_TYPES, "application/octet-stream"], "Файл чека"
+    ),
+)
+def download_attachment(
+    request: AuthedRequest, occurrence_id: int, attachment_id: int
+) -> FileResponse:
+    attachment = _get_attachment(occurrence_id, attachment_id)
+    if attachment.kind != AttachmentKind.FILE:
+        raise ApiError(409, ErrorCode.CONFLICT, "Это ссылка, а не файл")
+    try:
+        handle = attachment.file.open("rb")
+    except FileNotFoundError:
+        raise ApiError(404, ErrorCode.NOT_FOUND, "Файл не найден в хранилище") from None
+    return FileResponse(
+        handle,
+        as_attachment=True,
+        filename=attachment.name,
+        content_type=attachment.content_type or "application/octet-stream",
+    )
+
+
+@occurrences_router.delete(
+    "/{occurrence_id}/attachments/{attachment_id}",
+    response={204: None, 401: ErrorOut, 403: ErrorOut, 404: ErrorOut, 422: ErrorOut},
+    summary="Удалить чек или ссылку (автор или админ)",
+)
+def delete_attachment(
+    request: AuthedRequest, occurrence_id: int, attachment_id: int
+) -> tuple[int, None]:
+    attachments.delete(_get_attachment(occurrence_id, attachment_id), request.auth)
+    return 204, None
 
 
 # ── итоги по валютам ─────────────────────────────────────

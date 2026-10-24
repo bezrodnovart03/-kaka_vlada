@@ -17,6 +17,7 @@ from apps.core.schemas import (
 )
 
 from .models import (
+    AttachmentKind,
     Currency,
     OccurrenceStatus,
     PaymentOccurrence,
@@ -110,6 +111,14 @@ class RecurringPaymentBrief(Schema):
     is_active: bool
 
 
+ReminderChannelName = Literal["telegram", "email", "webhook", "apprise"]
+
+
+class ReminderOut(Schema):
+    channel: ReminderChannelName
+    sent_at: LocalDateTime
+
+
 class PaymentOccurrenceOut(Schema):
     id: int
     recurring_payment: RecurringPaymentBrief
@@ -122,7 +131,26 @@ class PaymentOccurrenceOut(Schema):
     overdue_days: int
     marked_by: UserBrief | None
     marked_at: LocalDateTime | None
-    reminder_sent_at: LocalDateTime | None
+    reminder_sent_at: LocalDateTime | None = Field(description="Напоминание в Telegram")
+    reminders: list[ReminderOut] = Field(description="Напоминания по всем каналам")
+    attachments_count: int = Field(description="Число прикреплённых чеков и ссылок")
+
+    @staticmethod
+    def resolve_reminders(obj: PaymentOccurrence) -> list[dict[str, Any]]:
+        reminders: list[dict[str, Any]] = []
+        if obj.reminder_sent_at is not None:
+            reminders.append({"channel": "telegram", "sent_at": obj.reminder_sent_at})
+        # related_name модели apps.notifications.ReminderDelivery; в запросах — prefetch.
+        reminders += [
+            {"channel": delivery.channel, "sent_at": delivery.sent_at}
+            for delivery in obj.reminder_deliveries.all()
+        ]
+        return reminders
+
+    @staticmethod
+    def resolve_attachments_count(obj: PaymentOccurrence) -> int:
+        count = getattr(obj, "attachments_total", None)
+        return int(count) if count is not None else obj.attachments.count()
 
 
 _DATE_JSON_SCHEMA = {"type": "string", "format": "date", "example": "2026-10-23"}
@@ -185,6 +213,32 @@ class OccurrenceFilter(PageQuery):
     due_from: ISODate | None = None
     due_to: ISODate | None = None
     ordering: Literal["due_date", "-due_date"] = "due_date"
+
+
+# ── чеки и ссылки ────────────────────────────────────────
+
+
+class AttachmentOut(Schema):
+    id: int
+    kind: AttachmentKind
+    name: str
+    url: str | None = Field(description="Для ссылки — адрес; для файла — null")
+    content_type: str = Field(description="Для файла — тип по содержимому; для ссылки — пусто")
+    size: int | None
+    uploaded_by: UserBrief | None
+    created_at: LocalDateTime
+
+
+class AttachmentLinkIn(InputSchema):
+    url: PlainText = Field(min_length=1, max_length=2000, examples=["https://example.com/receipt"])
+    name: PlainText | None = Field(None, max_length=255, description="По умолчанию — сама ссылка")
+
+
+class CalendarQuery(Schema):
+    currency: Currency | None = None
+    state: OccurrenceState | None = None
+    due_from: ISODate | None = Field(None, description="По умолчанию — 3 месяца назад")
+    due_to: ISODate | None = Field(None, description="По умолчанию — через 12 месяцев")
 
 
 # ── итоги ────────────────────────────────────────────────
