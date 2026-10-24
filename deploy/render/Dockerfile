@@ -45,7 +45,9 @@ WORKDIR /app/backend
 COPY --from=backend --chown=app:app /app/backend /app/backend
 COPY --from=frontend /app/dist /app/frontend
 COPY deploy/render/nginx.conf deploy/render/start.sh /app/deploy/
-RUN mkdir -p /app/backend/media && chown app:app /app/backend/media \
+# /app/backend создан WORKDIR от root — каталоги для записи создаём заранее.
+RUN mkdir -p /app/backend/media /app/backend/logs \
+    && chown app:app /app/backend/media /app/backend/logs \
     && chmod +x /app/deploy/start.sh
 
 USER app

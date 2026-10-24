@@ -1,0 +1,75 @@
+{% extends 'admin/base.html' %}
+
+{% load i18n unfold %}
+
+{% comment %}
+    Логи из LOG_FILE (apps.core.logs.logs_view). Свой Tailwind не собирается,
+    поэтому разметка формы и таблицы — на inline-стилях и CSS-переменных Unfold.
+{% endcomment %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+    <style>
+        .ik-logs-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+        .ik-logs-form input, .ik-logs-form select {
+            border: 1px solid rgba(127, 127, 127, .35); border-radius: 6px; padding: 6px 10px;
+            background: transparent; color: inherit; font-size: 14px;
+        }
+        .ik-logs-form input[type=search] { min-width: 260px; }
+        .ik-logs-form button {
+            border: 1px solid rgba(127, 127, 127, .35); border-radius: 6px; padding: 6px 14px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+        }
+        .ik-logs-form button:hover { background: rgba(127, 127, 127, .15); }
+        .ik-logs { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .ik-logs td { padding: 6px 8px; border-top: 1px solid rgba(127, 127, 127, .2); vertical-align: top; }
+        .ik-logs td.ik-nowrap { white-space: nowrap; }
+        .ik-logs pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, monospace; }
+        .ik-level { font-weight: 600; }
+        .ik-level-WARNING { color: #d97706; }
+        .ik-level-ERROR, .ik-level-CRITICAL { color: #dc2626; }
+    </style>
+
+    {% component "unfold/components/card.html" with title="Логи" description="Вход, действия пользователей, доставка напоминаний и ошибки. Свежие записи сверху." %}
+        <form method="get" class="ik-logs-form">
+            <select name="level">
+                <option value="">Все уровни</option>
+                {% for item in levels %}
+                    <option value="{{ item }}" {% if item == level %}selected{% endif %}>{{ item }} и выше</option>
+                {% endfor %}
+            </select>
+            <input type="search" name="q" value="{{ query }}" placeholder="Поиск: логин, платёж, telegram…">
+            <select name="limit">
+                {% for item in limits %}
+                    <option value="{{ item }}" {% if item == limit %}selected{% endif %}>{{ item }} записей</option>
+                {% endfor %}
+            </select>
+            <button type="submit">Показать</button>
+            {% if file_name %}<span style="opacity: .6; font-size: 13px;">файл {{ file_name }}</span>{% endif %}
+        </form>
+
+        {% if error %}
+            {% component "unfold/components/text.html" %}{{ error }}{% endcomponent %}
+        {% elif records %}
+            <div style="overflow-x: auto;">
+                <table class="ik-logs">
+                    {% for record in records %}
+                        <tr>
+                            <td class="ik-nowrap">{{ record.time }}</td>
+                            <td class="ik-nowrap ik-level ik-level-{{ record.level }}">{{ record.level }}</td>
+                            <td class="ik-nowrap" style="opacity: .7;">{{ record.logger }}</td>
+                            <td><pre>{{ record.message }}</pre></td>
+                        </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        {% else %}
+            {% component "unfold/components/text.html" %}Записей не найдено.{% endcomponent %}
+        {% endif %}
+    {% endcomponent %}
+{% endblock %}

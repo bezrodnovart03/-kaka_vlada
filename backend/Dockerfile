@@ -30,8 +30,8 @@ RUN useradd --create-home --uid 10001 app
 WORKDIR /app
 COPY --from=build --chown=app:app /app /app
 # Каталоги томов создаются заранее с владельцем app: именованный том наследует права.
-RUN mkdir -p /app/media /app/staticfiles \
-    && chown app:app /app/media /app/staticfiles \
+RUN mkdir -p /app/media /app/staticfiles /app/logs \
+    && chown app:app /app/media /app/staticfiles /app/logs \
     && chmod +x /app/docker-entrypoint.sh
 
 USER app

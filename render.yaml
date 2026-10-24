@@ -30,6 +30,9 @@ services:
         sync: false
       - key: SEED_DEMO
         value: "0"
+      # Логи в файл — их показывает страница «Логи» в Django-админке (/admin/logs/).
+      - key: LOG_FILE
+        value: logs/app.log
       - key: DB_ENGINE
         value: django.db.backends.postgresql
       - key: DB_HOST

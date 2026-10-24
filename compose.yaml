@@ -34,6 +34,8 @@ x-backend-env: &backend-env
   DB_USER: ${POSTGRES_USER:-invoice_keeper}
   DB_PASSWORD: ${POSTGRES_PASSWORD:-invoice_keeper}
   MEDIA_ROOT: media
+  # Общий файл логов backend и reminders — страница «Логи» в Django-админке.
+  LOG_FILE: logs/app.log
   # Почта уходит в Mailpit. Настоящий SMTP (Яндекс, Gmail…) — задать EMAIL_HOST, EMAIL_PORT,
   # EMAIL_USE_TLS/SSL, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD в .env рядом с compose.yaml.
   EMAIL_HOST: ${EMAIL_HOST:-mailpit}
@@ -85,6 +87,7 @@ services:
     volumes:
       - media:/app/media
       - static:/app/staticfiles
+      - logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -113,6 +116,7 @@ services:
     volumes:
       # Email-напоминание прикладывает .ics, а не файлы; том — для единообразия с backend.
       - media:/app/media
+      - logs:/app/logs
     depends_on:
       backend:
         condition: service_healthy
@@ -164,5 +168,6 @@ services:
 volumes:
   pgdata:
   media:
+  logs:
   static:
   mailpit:

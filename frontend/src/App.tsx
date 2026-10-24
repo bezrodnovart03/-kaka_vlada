@@ -24,6 +24,12 @@ function Layout() {
           <NavLink to="/summary">Итоги</NavLink>
           {/* Только UX: права проверяет бэкенд. */}
           {isAdmin && <NavLink to="/users">Пользователи</NavLink>}
+          {/* Django-админка: журнал изменений, доставки напоминаний, логи. Вход — тем же логином. */}
+          {isAdmin && (
+            <a href="/admin/" target="_blank" rel="noopener">
+              Django-админка ↗
+            </a>
+          )}
         </nav>
         <div className="userbox">
           <span>

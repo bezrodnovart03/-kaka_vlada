@@ -255,6 +255,12 @@ UNFOLD = {
                         "icon": "outgoing_mail",
                         "link": reverse_lazy("admin:notifications_reminderdelivery_changelist"),
                     },
+                    {
+                        "title": "Логи",
+                        "icon": "receipt",
+                        "link": reverse_lazy("admin_logs"),
+                        "permission": "apps.core.admin_ui.superuser_only",
+                    },
                 ],
             },
             {
@@ -297,13 +303,16 @@ LOG_HANDLERS = ["console"]
 LOG_HANDLER_CONFIG: dict[str, dict[str, Any]] = {
     "console": {"class": "logging.StreamHandler", "formatter": "plain"},
 }
-if settings.storage.log_file:
+# Файл логов; его же показывает страница «Логи» в админке (apps.core.logs).
+LOG_FILE = BASE_DIR / settings.storage.log_file if settings.storage.log_file else None
+if LOG_FILE is not None:
     # Файл с ротацией: 5 МБ × 5 архивов. Относительный путь — от каталога backend/.
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     LOG_HANDLERS.append("file")
     LOG_HANDLER_CONFIG["file"] = {
         "class": "logging.handlers.RotatingFileHandler",
         "formatter": "plain",
-        "filename": str(BASE_DIR / settings.storage.log_file),
+        "filename": str(LOG_FILE),
         "maxBytes": 5 * 1024 * 1024,
         "backupCount": 5,
         "encoding": "utf-8",
@@ -319,6 +328,8 @@ LOGGING: dict[str, Any] = {
     "loggers": {
         "audit": {"handlers": LOG_HANDLERS, "level": "INFO", "propagate": False},
         "apps": {"handlers": LOG_HANDLERS, "level": "INFO", "propagate": False},
+        # Необработанные ошибки (500) — тоже в файл, чтобы видеть их на странице «Логи».
+        "django.request": {"handlers": LOG_HANDLERS, "level": "ERROR", "propagate": False},
     },
 }
 
