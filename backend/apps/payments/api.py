@@ -7,7 +7,7 @@ from ninja import Query, Router
 from apps.core.auth import admin_auth
 from apps.core.errors import ApiError, ErrorCode, ErrorOut, field_error
 from apps.core.schemas import local_today, paginate
-from apps.notifications.services import send_due_reminders
+from apps.notifications.services import send_due_reminders_in_background
 from apps.users.types import AuthedRequest
 
 from . import services
@@ -80,7 +80,9 @@ def create_recurring_payment(
         today=today,
     )
     # Срок ближе, чем за REMINDER_DAYS_BEFORE дней — напоминание уходит сразу.
-    transaction.on_commit(lambda: send_due_reminders(today, recurring_payment_id=payment.id))
+    transaction.on_commit(
+        lambda: send_due_reminders_in_background(today, recurring_payment_id=payment.id)
+    )
     return 201, services.payments_queryset(today).get(pk=payment.pk)
 
 

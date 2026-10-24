@@ -4,6 +4,9 @@ from django.contrib import admin
 from django.http import HttpRequest
 from simple_history.admin import SimpleHistoryAdmin
 
+from apps.core.schemas import local_today
+
+from . import services
 from .models import PaymentOccurrence, RecurringPayment
 
 
@@ -38,6 +41,13 @@ class RecurringPaymentAdmin(SimpleHistoryAdmin):  # type: ignore[misc]  # simple
         if not change:
             obj.created_by = request.user  # type: ignore[assignment]
         super().save_model(request, obj, form, change)
+        if not change:
+            # Как при создании через API: сразу заводим периоды по расписанию.
+            services.sync_occurrences(obj, local_today())
+
+    def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        # Жёсткое удаление стёрло бы историю периодов; удалять — через API (мягко).
+        return False
 
 
 @admin.register(PaymentOccurrence)
@@ -55,3 +65,11 @@ class PaymentOccurrenceAdmin(SimpleHistoryAdmin):  # type: ignore[misc]
     search_fields = ("recurring_payment__title",)
     date_hierarchy = "due_date"
     readonly_fields = ("recurring_payment", "due_date", "amount", "currency", "created_at")
+
+    # Периоды создаёт только расписание (services.sync_occurrences): срок, сумма и валюта
+    # берутся из платежа и через админку не задаются — форма добавления сохраняла бы NULL.
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return False

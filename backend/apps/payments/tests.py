@@ -340,3 +340,62 @@ class SummaryApiTests(ApiTestCase):
             "/payments/summary", self.user_headers, date_from="2026-02-01", date_to="2026-01-01"
         )
         self.assertEqual(response.status_code, 422)
+
+
+class PaymentAdminTests(TestCase):
+    def setUp(self) -> None:
+        self.admin = User.objects.create_superuser(
+            username="root", password="x", role=UserRole.ADMIN
+        )
+        self.client.force_login(self.admin)
+
+    def test_occurrence_cannot_be_added_manually(self) -> None:
+        response = self.client.get("/admin/payments/paymentoccurrence/add/")
+
+        self.assertEqual(response.status_code, 403)
+        response = self.client.post("/admin/payments/paymentoccurrence/add/", {"status": "unpaid"})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(PaymentOccurrence.objects.exists())
+
+    def test_payment_created_in_admin_gets_occurrences(self) -> None:
+        response = self.client.post(
+            "/admin/payments/recurringpayment/add/",
+            {
+                "title": "Хостинг",
+                "amount": "1500.00",
+                "currency": "RUB",
+                "period": "monthly",
+                "first_due_date": date.today().isoformat(),
+                "comment": "",
+                # пустой inline-формсет периодов
+                "occurrences-TOTAL_FORMS": "0",
+                "occurrences-INITIAL_FORMS": "0",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302, response.content[:2000])
+        payment = RecurringPayment.objects.get(title="Хостинг")
+        self.assertTrue(payment.occurrences.exists())
+        self.assertEqual(payment.created_by, self.admin)
+
+    def test_paid_without_date_is_form_error_not_500(self) -> None:
+        payment = RecurringPayment.objects.create(
+            title="Аренда",
+            amount="100.00",
+            currency="RUB",
+            first_due_date=date(2026, 10, 26),
+            anchor_day=26,
+            created_by=self.admin,
+        )
+        occurrence = PaymentOccurrence.objects.create(
+            recurring_payment=payment, amount="100.00", currency="RUB", due_date=date(2026, 10, 26)
+        )
+
+        response = self.client.post(
+            f"/admin/payments/paymentoccurrence/{occurrence.pk}/change/",
+            {"status": "paid", "paid_at": ""},
+        )
+
+        self.assertEqual(response.status_code, 200)  # форма с ошибкой, без 500
+        occurrence.refresh_from_db()
+        self.assertEqual(occurrence.status, OccurrenceStatus.UNPAID)

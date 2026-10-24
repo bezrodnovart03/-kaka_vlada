@@ -90,7 +90,9 @@ class ReminderTests(TestCase):
         )
         headers = {"Authorization": f"Bearer {login.json()['access']}"}
 
-        with self.captureOnCommitCallbacks(execute=True):
+        # Фоновый поток в тесте запускаем синхронно: иначе он не увидит данные транзакции теста.
+        inline = mock.patch.object(services, "_run_in_background", side_effect=lambda f: f())
+        with inline, self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 "/api/v1/recurring-payments",
                 {
@@ -138,3 +140,75 @@ class ReminderTests(TestCase):
         self.assertEqual(services.handle_pay_callback(callback), "Недоступно в этом чате")
         occurrence.refresh_from_db()
         self.assertEqual(occurrence.status, OccurrenceStatus.UNPAID)
+
+    def test_create_does_not_wait_for_telegram(self) -> None:
+        login = self.client.post(
+            "/api/v1/auth/login",
+            {"username": "boss", "password": "x"},
+            content_type="application/json",
+        )
+        headers = {"Authorization": f"Bearer {login.json()['access']}"}
+
+        with (
+            mock.patch.object(services, "_run_in_background") as background,
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            response = self.client.post(
+                "/api/v1/recurring-payments",
+                {
+                    "title": "Сервер",
+                    "amount": "49",
+                    "currency": "USD",
+                    "first_due_date": "2026-10-24",
+                },
+                content_type="application/json",
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 201)
+        background.assert_called_once()
+        self.send.assert_not_called()  # отправка ушла в поток, запрос её не ждал
+
+    def test_failing_callback_does_not_block_next_updates(self) -> None:
+        self.payment(date(2026, 10, 24))
+        occurrence = PaymentOccurrence.objects.get()
+
+        def callback(update_id: int, data: str) -> dict[str, Any]:
+            return {
+                "update_id": update_id,
+                "callback_query": {
+                    "id": str(update_id),
+                    "data": data,
+                    "message": {"chat": {"id": int(CHAT)}},
+                },
+            }
+
+        updates = [callback(10, f"paid:{occurrence.id}"), callback(11, f"paid:{occurrence.id}")]
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        def fake_call(method: str, payload: dict[str, Any], timeout: float = 10) -> Any:
+            calls.append((method, payload))
+            return updates if method == "getUpdates" else True
+
+        real_handle = services.handle_pay_callback
+        failures = iter([RuntimeError("db down")])
+
+        def flaky_handle(cb: dict[str, Any], today: date | None = None) -> str:
+            error = next(failures, None)
+            if error is not None:
+                raise error
+            return real_handle(cb, today)
+
+        with (
+            mock.patch.object(telegram, "call", side_effect=fake_call),
+            mock.patch.object(services, "handle_pay_callback", side_effect=flaky_handle),
+        ):
+            offset = services.poll_updates(None, timeout=0)
+
+        self.assertEqual(offset, 12)
+        answers = [p["text"] for m, p in calls if m == "answerCallbackQuery"]
+        self.assertEqual(
+            answers, ["Не удалось отметить оплату, попробуйте в панели", "Отмечено как оплачено"]
+        )
+        occurrence.refresh_from_db()
+        self.assertEqual(occurrence.status, OccurrenceStatus.PAID)

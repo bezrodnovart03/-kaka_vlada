@@ -11,11 +11,14 @@
 
 import html
 import logging
+import threading
+from collections.abc import Callable
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
 from django.conf import settings
+from django.db import connection
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -130,6 +133,31 @@ def send_due_reminders(
     return sent
 
 
+def _run_in_background(target: Callable[[], None]) -> None:
+    threading.Thread(target=target, name="telegram-reminder", daemon=True).start()
+
+
+def send_due_reminders_in_background(today: date, *, recurring_payment_id: int) -> None:
+    """
+    Напоминание сразу после создания платежа — без ожидания Telegram в HTTP-запросе.
+    Если поток не отправит (сеть, остановка процесса), run_reminders дошлёт
+    на следующей проверке: отметка reminder_sent_at снимается при ошибке отправки.
+    """
+    if not telegram.is_configured():
+        return
+
+    def send() -> None:
+        try:
+            send_due_reminders(today, recurring_payment_id=recurring_payment_id)
+        except Exception:
+            logger.exception("Фоновая отправка напоминания по платежу %s", recurring_payment_id)
+        finally:
+            # У потока своё подключение к БД — закрываем, чтобы не копились.
+            connection.close()
+
+    _run_in_background(send)
+
+
 def run_check(today: date | None = None) -> int:
     """Один цикл проверки: дозаводит периоды и рассылает напоминания."""
     today = today or local_today()
@@ -200,13 +228,20 @@ def poll_updates(offset: int | None, timeout: int) -> int | None:
         payload["offset"] = offset
     updates = telegram.call("getUpdates", payload, timeout=timeout + 10) or []
     for update in updates:
+        # offset сдвигаем до обработки: упавшее обновление не должно приходить снова
+        # и блокировать все следующие нажатия.
         offset = int(update["update_id"]) + 1
         callback = update.get("callback_query")
         if not callback:
             continue
         if not str(callback.get("data", "")).startswith(PAY_CALLBACK_PREFIX):
             continue
-        answer = handle_pay_callback(callback)
+        try:
+            answer = handle_pay_callback(callback)
+        except Exception:
+            logger.exception("Ошибка обработки кнопки «Оплачено»: update %s", update["update_id"])
+            answer = "Не удалось отметить оплату, попробуйте в панели"
+        # Отвечаем всегда — иначе кнопка в Telegram бесконечно «крутится».
         try:
             telegram.call(
                 "answerCallbackQuery", {"callback_query_id": callback["id"], "text": answer}
