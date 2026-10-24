@@ -13,8 +13,10 @@ dependencies = [
     "django-stubs-ext>=6.1.2",
     "django-unfold>=0.110.0",
     "filetype>=1.2.0",
+    "gunicorn>=26.2.0",
     "httpx>=0.28.1",
     "icalendar>=7.3.0",
+    "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.16.1",
 ]
 

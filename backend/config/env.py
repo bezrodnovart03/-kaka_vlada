@@ -53,6 +53,8 @@ class DjangoSettings(BaseAppSettings):
     secret_key: Annotated[str, Field(alias="SECRET_KEY")]
     debug: bool = Field(default=False, alias="DEBUG")
     allowed_hosts: list[str] = Field(default_factory=list, alias="ALLOWED_HOSTS")
+    # Origin'ы для CSRF админки за прокси (https://example.com); пусто — только свой хост.
+    csrf_trusted_origins: list[str] = Field(default_factory=list, alias="CSRF_TRUSTED_ORIGINS")
     # Единый часовой пояс для сроков оплаты и напоминаний.
     time_zone: str = Field(default="Europe/Moscow", alias="TIME_ZONE")
 

@@ -50,6 +50,7 @@
 | Каналы и файлы | Django email (SMTP), [httpx](https://www.python-httpx.org/) (webhook), [Apprise](https://github.com/caronc/apprise) (другие сервисы), [icalendar](https://icalendar.readthedocs.io/) (`.ics`), [filetype](https://github.com/h2non/filetype.py) (тип файла по содержимому) |
 | Качество | ruff (линтер + форматтер), mypy `strict` с плагинами django и pydantic, pre-commit, Django TestCase |
 | Пакеты (backend) | [uv](https://docs.astral.sh/uv/) |
+| Запуск | Docker Compose: PostgreSQL 17, gunicorn, nginx |
 
 ## Структура репозитория
 
@@ -67,7 +68,47 @@
 
 ## Быстрый старт
 
-### Требования
+### Запуск в Docker (одной командой)
+
+Нужен только Docker с Compose v2.
+
+```bash
+cp backend/.env.example backend/.env   # заполнить SECRET_KEY, ADMIN_*, TELEGRAM_*
+docker compose up -d --build
+```
+
+- Панель — http://localhost:8080, админка — http://localhost:8080/admin/, Swagger — http://localhost:8080/api/v1/docs.
+- Демо-данные: `SEED_DEMO=1 docker compose up -d` (только при пустой базе) или `docker compose exec backend python manage.py seed_demo --reset`.
+- Логи: `docker compose logs -f backend reminders`. Остановить: `docker compose down`; удалить ещё и данные: `docker compose down -v`.
+
+| Сервис | Что делает |
+|---|---|
+| `db` | PostgreSQL 17, данные в томе `pgdata` |
+| `backend` | Django + gunicorn; при старте `migrate` (админ из `.env`) и `collectstatic` |
+| `reminders` | `run_reminders`: напоминания во все каналы и кнопка «Оплачено» в Telegram |
+| `frontend` | nginx: React-панель, прокси `/api` и `/admin`, статика админки |
+| `mailpit` | профиль `mail`: SMTP-ловушка, письма на http://localhost:8025 |
+
+Переменные приложения берутся из `backend/.env`. Compose в контейнерах переопределяет БД (PostgreSQL), `DEBUG=False` и пути. Параметры самого Compose задаются в окружении или в файле `.env` рядом с `compose.yaml`:
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `APP_PORT` | `8080` | Порт панели на хосте |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `invoice_keeper` | БД; наружу порт не открыт |
+| `ALLOWED_HOSTS` | `["localhost","127.0.0.1","backend"]` | Добавьте свой домен |
+| `CSRF_TRUSTED_ORIGINS` | `[]` | Для админки за HTTPS-прокси: `["https://example.com"]` |
+| `JWT_REFRESH_COOKIE_SECURE` | `false` | `true`, если панель открывается по HTTPS |
+| `PANEL_URL` | `http://localhost:8080` | Ссылка на панель в напоминаниях |
+| `SEED_DEMO` | `0` | `1` — демо-данные при первом старте |
+| `GUNICORN_WORKERS` | `2` | Процессы gunicorn |
+| `CLIENT_MAX_BODY_SIZE` | `12m` | Лимит тела запроса в nginx (чеки до `ATTACHMENT_MAX_MB`) |
+| `BACKEND_ENV_FILE` | `backend/.env` | Другой env-файл приложения |
+
+Email без настоящего SMTP: `docker compose --profile mail up -d`, а в `backend/.env` — `EMAIL_HOST=mailpit`, `EMAIL_PORT=1025`, `EMAIL_USE_TLS=false`, `REMINDER_EMAIL_TO=["team@example.com"]`.
+
+У контейнеров заданы лимиты CPU и памяти. Процессы работают от непривилегированного пользователя. Чеки лежат в томе `media` и наружу не раздаются — только через API с авторизацией.
+
+### Требования для запуска без Docker
 
 - Python 3.14+ и [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Node.js 20+ и npm

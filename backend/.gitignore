@@ -227,3 +227,6 @@ media/
 .test-media/
 logs/
 *.log
+
+# collectstatic
+staticfiles/

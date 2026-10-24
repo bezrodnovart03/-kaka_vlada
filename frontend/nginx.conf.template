@@ -1,0 +1,68 @@
+# Один origin для панели и API (docs/API.md §1): refresh-cookie SameSite=Strict работает без CORS.
+upstream django {
+    server backend:8000;
+}
+
+server {
+    listen 80;
+    server_name _;
+    server_tokens off;
+
+    root /usr/share/nginx/html;
+
+    # Чек к оплате до ATTACHMENT_MAX_MB плюс запас на multipart.
+    client_max_body_size ${CLIENT_MAX_BODY_SIZE};
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml text/calendar;
+    gzip_min_length 1024;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy same-origin always;
+
+    location /api/ {
+        proxy_pass http://django;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    location /admin/ {
+        proxy_pass http://django;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Статика админки (collectstatic в общий том). Чеки (media) наружу не отдаются —
+    # только через API с авторизацией.
+    location /static/ {
+        alias /var/www/static/;
+        expires 7d;
+        access_log off;
+    }
+
+    # Файлы сборки Vite с хешем в имени — кэш навсегда.
+    # add_header внутри location отменяет заголовки уровня server — повторяем их.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy same-origin always;
+        try_files $uri =404;
+    }
+
+    # SPA: любые пути панели отдаёт index.html, его не кэшируем.
+    location / {
+        add_header Cache-Control "no-cache";
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-Frame-Options DENY always;
+        add_header Referrer-Policy same-origin always;
+        try_files $uri /index.html;
+    }
+}

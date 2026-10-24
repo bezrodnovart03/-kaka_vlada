@@ -1,0 +1,22 @@
+# Секреты и локальные данные не попадают в образ: .env подключается через compose.
+.env
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+.test-media/
+logs/
+*.log
+
+# Окружение и кэши
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.schemathesis/
+.pytest_cache/
+
+Dockerfile
+.dockerignore

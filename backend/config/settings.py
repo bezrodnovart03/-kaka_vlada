@@ -31,6 +31,7 @@ SECRET_KEY = settings.django.secret_key
 DEBUG = settings.django.debug
 
 ALLOWED_HOSTS = settings.django.allowed_hosts
+CSRF_TRUSTED_ORIGINS = settings.django.csrf_trusted_origins
 
 
 # Application definition
@@ -133,6 +134,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+# collectstatic (Docker): статику админки отдаёт nginx.
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field

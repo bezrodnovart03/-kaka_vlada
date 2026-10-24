@@ -1,0 +1,149 @@
+# Invoice Keeper: полный стек в Docker.
+#
+#   cp backend/.env.example backend/.env    # заполнить SECRET_KEY, ADMIN_*, TELEGRAM_*
+#   docker compose up -d --build
+#   → панель http://localhost:8080, админка http://localhost:8080/admin/,
+#     Swagger http://localhost:8080/api/v1/docs
+#
+# Сервисы:
+#   db         PostgreSQL 17 — данные в томе pgdata, сохраняются после перезапуска
+#   backend    Django + gunicorn; при старте — migrate (и админ из .env) и collectstatic
+#   reminders  run_reminders: напоминания во все каналы и кнопка «Оплачено» в Telegram
+#   frontend   nginx: React-панель, прокси /api и /admin, статика админки
+#   mailpit    (профиль mail) SMTP-ловушка для проверки email: http://localhost:8025
+#
+# Переменные приложения — из backend/.env (тот же файл, что и при запуске без Docker).
+# Ниже переопределяется только то, что в контейнере должно быть другим: БД, пути, DEBUG.
+# Переменные вида ${VAR:-default} можно задать в .env рядом с этим файлом или в окружении.
+
+name: invoice-keeper
+
+x-backend-env: &backend-env
+  DEBUG: "False"
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["localhost","127.0.0.1","backend"]}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-[]}
+  # Secure-cookie только по HTTPS. За HTTPS-прокси — true.
+  JWT_REFRESH_COOKIE_SECURE: ${JWT_REFRESH_COOKIE_SECURE:-false}
+  PANEL_URL: ${PANEL_URL:-http://localhost:8080}
+  DB_ENGINE: django.db.backends.postgresql
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: ${POSTGRES_DB:-invoice_keeper}
+  DB_USER: ${POSTGRES_USER:-invoice_keeper}
+  DB_PASSWORD: ${POSTGRES_PASSWORD:-invoice_keeper}
+  MEDIA_ROOT: media
+
+x-backend: &backend
+  build:
+    context: ./backend
+  image: invoice-keeper-backend:latest
+  env_file:
+    - ${BACKEND_ENV_FILE:-backend/.env}
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-invoice_keeper}
+      POSTGRES_USER: ${POSTGRES_USER:-invoice_keeper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-invoice_keeper}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  backend:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "1"
+      # 1 — загрузить демо-данные при первом старте (seed_demo без --reset).
+      SEED_DEMO: ${SEED_DEMO:-0}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+    volumes:
+      - media:/app/media
+      - static:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/admin/login/', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  reminders:
+    <<: *backend
+    command: ["python", "manage.py", "run_reminders"]
+    environment:
+      <<: *backend-env
+      RUN_MIGRATIONS: "0"
+    volumes:
+      # Email-напоминание прикладывает .ics, а не файлы; том — для единообразия с backend.
+      - media:/app/media
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  frontend:
+    build:
+      context: ./frontend
+    image: invoice-keeper-frontend:latest
+    environment:
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-12m}
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - static:/var/www/static:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 64M }
+
+  # docker compose --profile mail up -d
+  # В backend/.env: EMAIL_HOST=mailpit, EMAIL_PORT=1025, EMAIL_USE_TLS=false,
+  # REMINDER_EMAIL_TO=["team@example.com"]
+  mailpit:
+    image: axllent/mailpit:v1.27
+    profiles: ["mail"]
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+volumes:
+  pgdata:
+  media:
+  static:
