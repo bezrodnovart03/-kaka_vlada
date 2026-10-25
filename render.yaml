@@ -1,0 +1,52 @@
+# Render Blueprint: бесплатный деплой в один клик (docs/DEPLOY.md).
+# Веб-сервис — один контейнер deploy/render/Dockerfile: панель, API, админка и Telegram-бот.
+# Ограничения бесплатного тарифа: сервис засыпает через 15 мин без входящих запросов
+# (держим внешним пингом /healthz), диск временный (чеки пропадают при перезапуске),
+# бесплатная БД удаляется через 30 дней, исходящий SMTP закрыт — email-канал не работает.
+services:
+  - type: web
+    name: invoice-keeper
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./deploy/render/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: TIME_ZONE
+        value: Europe/Moscow
+      - key: ADMIN_USERNAME
+        value: admin
+      # Значения ниже Render спросит при создании Blueprint.
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: SEED_DEMO
+        value: "0"
+      - key: DB_ENGINE
+        value: django.db.backends.postgresql
+      - key: DB_HOST
+        fromDatabase: { name: invoice-keeper-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: invoice-keeper-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: invoice-keeper-db, property: database }
+      - key: DB_USER
+        fromDatabase: { name: invoice-keeper-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: invoice-keeper-db, property: password }
+
+databases:
+  - name: invoice-keeper-db
+    plan: free
+    region: frankfurt
+    databaseName: invoice_keeper
+    user: invoice_keeper
+    postgresMajorVersion: "17"

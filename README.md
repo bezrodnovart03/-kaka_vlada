@@ -280,7 +280,9 @@ docker run -d --name mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit
 Webhook-получатель проверяет подпись так (Python):
 
 ```python
-expected = "sha256=" + hmac.new(SECRET.encode(), request_body, hashlib.sha256).hexdigest()
+expected = (
+    "sha256=" + hmac.new(SECRET.encode(), request_body, hashlib.sha256).hexdigest()
+)
 hmac.compare_digest(expected, request.headers["X-Invoice-Keeper-Signature"])
 ```
 

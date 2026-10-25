@@ -1,0 +1,6 @@
+# HTTPS для панели: Caddy сам получает и продлевает сертификат Let's Encrypt для $DOMAIN
+# и проксирует всё на nginx (frontend), который уже раздаёт SPA, /api, /admin и /static.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy frontend:80
+}

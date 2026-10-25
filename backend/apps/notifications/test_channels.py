@@ -98,6 +98,8 @@ class ChannelTests(TestCase):
 
     @override_settings(REMINDER_EMAIL_TO_USERS=True)
     def test_email_to_active_users(self) -> None:
+        # Админ из .env тоже активный пользователь: его email зависит от окружения.
+        User.objects.update(email="")
         User.objects.create_user(username="anna", password="x", email="anna@example.com")
         User.objects.create_user(
             username="gone", password="x", email="gone@example.com", is_active=False
